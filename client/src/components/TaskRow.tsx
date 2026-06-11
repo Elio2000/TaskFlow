@@ -1,0 +1,56 @@
+import { api } from '../api'
+import type { Task } from '../api'
+import React from 'react'
+import { Icon } from '../icons'
+import { TaskCheckbox } from './TaskCheckbox'
+import { TaskChips } from './TaskChips'
+
+interface TaskRowProps {
+  task: Task
+  showProject?: boolean
+  onClick?: (task: Task) => void
+  onAIClick?: (task: Task) => void
+  onDelete?: () => void
+}
+
+export function TaskRow({ task, showProject, onClick, onAIClick, onDelete }: TaskRowProps) {
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    await api.deleteTask(task.id)
+    onDelete?.()
+  }
+
+  return (
+    <div
+      className={'task-row' + (task.completed ? ' is-done' : '')}
+      onClick={() => onClick && onClick(task)}
+    >
+      <TaskCheckbox task={task} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="task-title">{task.title}</div>
+        <TaskChips task={task} showProject={showProject} />
+      </div>
+      <div className="task-actions" style={{ paddingTop: 2 }}>
+        <button
+          className="btn-icon"
+          style={{ width: 26, height: 26 }}
+          onClick={(e) => {
+            e.stopPropagation()
+            onAIClick && onAIClick(task)
+          }}
+          title="AI 处理"
+        >
+          <Icon name="sparkle" size={14} style={{ color: 'var(--ai)' }} />
+        </button>
+        <button
+          className="btn-icon"
+          style={{ width: 26, height: 26 }}
+          onClick={(e) => { handleDelete(e) }}
+          title="删除"
+        >
+          <Icon name="trash" size={14} />
+        </button>
+      </div>
+    </div>
+  )
+}

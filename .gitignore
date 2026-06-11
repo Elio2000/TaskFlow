@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+data/*.sqlite3
+data/*.sqlite3-shm
+data/*.sqlite3-wal
+__pycache__/
+*.pyc
+.DS_Store
+*.log
