@@ -1,4 +1,3 @@
-import React from 'react'
 import { api } from '../api'
 import type { Task } from '../api'
 import { Icon, PRIORITY_META } from '../icons'
@@ -6,9 +5,10 @@ import { Icon, PRIORITY_META } from '../icons'
 interface TaskCheckboxProps {
   task: Task
   size?: number
+  onToggle?: () => void
 }
 
-export function TaskCheckbox({ task, size = 18 }: TaskCheckboxProps) {
+export function TaskCheckbox({ task, size = 18, onToggle }: TaskCheckboxProps) {
   const c = task.priority < 4 ? PRIORITY_META[task.priority].color : 'var(--text-tertiary)'
   return (
     <button
@@ -23,9 +23,10 @@ export function TaskCheckbox({ task, size = 18 }: TaskCheckboxProps) {
         width: size,
         height: size,
       }}
-      onClick={(e) => {
+      onClick={async (e) => {
         e.stopPropagation()
-        api.toggleTask(task.id)
+        await api.toggleTask(task.id)
+        onToggle?.()
       }}
       aria-label={task.completed ? '标记未完成' : '完成任务'}
     >

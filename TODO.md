@@ -795,7 +795,7 @@ curl -s "http://localhost:3001/api/agents-doc/inbox"
 
 ---
 
-### P5-001  日历日/周/月三视图 [SPLIT]
+### P5-001  日历日/周/月三视图 [SPLIT] — ✅ DONE
 
 **问题**：当前 `CalendarView` 只有月份网格。参考设计 `Claude/app/calendar.jsx` 有月/周/日三种视图模式，周/日视图有 24 小时时间轴，支持在时间槽点击创建任务。  
 **参考文件**：`Claude/app/calendar.jsx`  
@@ -1132,7 +1132,7 @@ import { TaskGroup } from '../components/TaskGroup'
 
 ---
 
-### P6-003  Sidebar 项目视图切换（board/list）
+### P6-003  Sidebar 项目视图切换（board/list） — ✅ DONE
 
 **问题**：侧栏点击项目只能进入默认视图（list），无法快速切换 board/list。  
 **文件**：`client/src/components/Sidebar.tsx`
@@ -1205,7 +1205,7 @@ const [hoveredProj, setHoveredProj] = useState<string | null>(null)
 
 ---
 
-### P7-001  Cycle（冲刺/周期）
+### P7-001  Cycle（冲刺/周期） — ✅ DONE
 
 **功能描述**：用户可以创建一个有开始/结束日期的"冲刺"，把来自任何项目的任务拉进来，形成一个时间盒。Sidebar 显示当前活跃 Cycle，查看 Cycle 内任务进度。
 
@@ -1285,7 +1285,7 @@ curl -s http://localhost:3001/api/cycles/$CYCLE_ID/tasks | jq 'length'
 
 ---
 
-### P7-002  Activity Log（任务修改历史）
+### P7-002  Activity Log（任务修改历史） — ✅ DONE
 
 **功能描述**：每次对任务的字段修改都记录一条 activity，在 TaskModal 底部显示"谁在什么时候把什么字段从 X 改成了 Y"。个人工具里"谁"就是"你自己"，所以只记录字段、旧值、新值、时间。
 
@@ -1389,7 +1389,7 @@ curl -s http://localhost:3001/api/tasks/$TASK_ID/activities | jq '.[0]'
 
 ---
 
-### P7-003  批量操作（Bulk Actions）
+### P7-003  批量操作（Bulk Actions） — ✅ DONE
 
 **功能描述**：在列表/收件箱视图，可以多选任务，然后批量修改优先级、截止日期、项目，或批量删除/完成。参考 Plane 的 `IssueUpdateBulk`。
 

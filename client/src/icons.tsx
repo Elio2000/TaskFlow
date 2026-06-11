@@ -1,8 +1,4 @@
-import { createElement, ReactNode } from 'react'
-
-interface IconPaths {
-  [key: string]: ReactNode
-}
+import { createElement } from 'react'
 
 export function Icon({ name, size = 18, strokeWidth = 1.6, style, className }: {
   name: string

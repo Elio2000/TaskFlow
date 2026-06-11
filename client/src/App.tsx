@@ -6,6 +6,7 @@ import { SearchOverlay } from './components/SearchOverlay'
 import { TaskModal } from './components/TaskModal'
 import { AIPanel } from './ai/AIPanel'
 import { TodayView, InboxView, UpcomingView, CalendarView, BoardView, ListView } from './views/Views'
+import { CycleView } from './views/CycleView'
 import { Icon } from './icons'
 import './style.css'
 
@@ -28,7 +29,7 @@ export default function App() {
   const [taskModal, setTaskModal] = useState<string | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiProjectId, setAiProjectId] = useState('inbox')
-  const [aiRefTask, setAiRefTask] = useState<Task | null>(null)
+  const [aiRefTask] = useState<Task | null>(null)
   const [showSearch, setShowSearch] = useState(false)
   const [aiLayout, setAiLayout] = useState<'float' | 'sidebar' | 'bottom'>('float')
   const [tasks, setTasks] = useState<Task[]>([])
@@ -84,6 +85,7 @@ export default function App() {
       case 'calendar': return <CalendarView />
       case 'board': return <BoardView projectId={route.projectId || 'inbox'} />
       case 'list': return <ListView projectId={route.projectId || 'inbox'} />
+      case 'cycle': return <CycleView cycleId={route.projectId || ''} />
       default: return <TodayView />
     }
   }

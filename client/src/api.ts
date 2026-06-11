@@ -70,10 +70,13 @@ export const api = {
     return request<Task[]>(`/tasks${qs}`)
   },
   getTask: (id: string) => request<Task>(`/tasks/${id}`),
+  getTaskActivities: (taskId: string) => request<any[]>(`/tasks/${taskId}/activities`),
   addTask: (fields: Partial<Task>) => request<Task>('/tasks', { method: 'POST', body: JSON.stringify(fields) }),
   updateTask: (id: string, patch: Partial<Task>) => request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteTask: (id: string) => request(`/tasks/${id}`, { method: 'DELETE' }),
   toggleTask: (id: string) => request<Task>(`/tasks/${id}/toggle`, { method: 'PATCH' }),
+  bulkUpdate: (ids: string[], updates: Partial<Task>) =>
+    request('/tasks/bulk', { method: 'POST', body: JSON.stringify({ ids, updates }) }),
 
   // Conversations
   getConversations: (projectId: string) => request<Conversation[]>(`/chat/conversations?project_id=${projectId}`),
@@ -96,4 +99,12 @@ export const api = {
   // Settings
   getSetting: (key: string) => request<{ key: string; value: string | null }>(`/settings/${key}`),
   setSetting: (key: string, value: string) => request(`/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value }) }),
+
+  // Cycles
+  getCycles: () => request<any[]>('/cycles'),
+  addCycle: (name: string, start_date: string, end_date: string) => request('/cycles', { method: 'POST', body: JSON.stringify({ name, start_date, end_date }) }),
+  deleteCycle: (id: string) => request(`/cycles/${id}`, { method: 'DELETE' }),
+  getCycleTasks: (cycleId: string) => request<Task[]>(`/cycles/${cycleId}/tasks`),
+  addTaskToCycle: (cycleId: string, taskId: string) => request(`/cycles/${cycleId}/tasks`, { method: 'POST', body: JSON.stringify({ task_id: taskId }) }),
+  removeTaskFromCycle: (cycleId: string, taskId: string) => request(`/cycles/${cycleId}/tasks/${taskId}`, { method: 'DELETE' }),
 }

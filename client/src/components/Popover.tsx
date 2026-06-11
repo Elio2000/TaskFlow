@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback, ReactNode, CSSProperties } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import type { ReactNode, CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 
 export function usePopover() {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLElement | null>(null)
+  const ref = useRef<HTMLButtonElement | null>(null)
   const toggle = useCallback(() => setOpen((o) => !o), [])
   const close = useCallback(() => setOpen(false), [])
   return { open, setOpen, ref, toggle, close }

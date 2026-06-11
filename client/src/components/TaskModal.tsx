@@ -10,6 +10,12 @@ import { PriorityMenu } from './PriorityMenu'
 import { LabelMenu } from './LabelMenu'
 import { ProjectMenu } from './ProjectMenu'
 
+const FIELD_LABELS: Record<string, string> = {
+  title: '标题', description: '描述', priority: '优先级',
+  due_date: '截止日期', due_time: '截止时间', completed: '完成状态',
+  labels: '标签', project_id: '项目', section_id: '分区', repeat: '重复'
+}
+
 interface TaskModalProps {
   taskId: string
   onClose: () => void
@@ -29,6 +35,7 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
   const [section, setSection] = useState<Section | null>(null)
   const [subtasks, setSubtasks] = useState<Task[]>([])
   const [labels, setLabels] = useState<Label[]>([])
+  const [activities, setActivities] = useState<any[]>([])
 
   const [editTitle, setEditTitle] = useState(false)
   const [titleVal, setTitleVal] = useState('')
@@ -49,6 +56,7 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
       setTitleVal(t.title)
       setDescVal(t.description || '')
       setReminderVal(t.reminder || '')
+      api.getTaskActivities(taskId).then(setActivities).catch(() => {})
     }).catch(() => setTask(null))
   }
 
@@ -534,6 +542,26 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
             </button>
           </div>
         </div>
+
+        {/* Activity Log */}
+        {activities.length > 0 && (
+          <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border-soft)' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 8 }}>修改记录</div>
+            {activities.map((a: any) => (
+              <div key={a.id} style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', gap: 6 }}>
+                <span style={{ color: 'var(--text-tertiary)', flex: 'none', width: 60 }}>
+                  {new Date(a.created_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                </span>
+                <span>
+                  将 <b>{FIELD_LABELS[a.field] || a.field}</b> 从{' '}
+                  <code style={{ background: 'var(--bg-inset)', borderRadius: 3, padding: '0 4px', fontSize: 11 }}>{a.old_value || '空'}</code>
+                  {' '}改为{' '}
+                  <code style={{ background: 'var(--bg-inset)', borderRadius: 3, padding: '0 4px', fontSize: 11 }}>{a.new_value || '空'}</code>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Footer */}
         <div

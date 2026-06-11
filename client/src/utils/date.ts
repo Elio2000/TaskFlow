@@ -43,4 +43,20 @@ export const DateU = {
     }
     return cells
   },
+  addMonths(s: string, n: number): string {
+    const d = this.parse(s)
+    d.setMonth(d.getMonth() + n)
+    return this.fmt(d)
+  },
+  weekDates(s: string): string[] {
+    const d = this.parse(s)
+    const dow = d.getDay() === 0 ? 6 : d.getDay() - 1
+    const monday = new Date(d)
+    monday.setDate(d.getDate() - dow)
+    return Array.from({ length: 7 }, (_, i) => {
+      const day = new Date(monday)
+      day.setDate(monday.getDate() + i)
+      return this.fmt(day)
+    })
+  },
 }

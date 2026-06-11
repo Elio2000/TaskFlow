@@ -11,9 +11,13 @@ interface TaskRowProps {
   onClick?: (task: Task) => void
   onAIClick?: (task: Task) => void
   onDelete?: () => void
+  onToggle?: () => void
+  selectable?: boolean
+  selected?: boolean
+  onSelect?: (id: string) => void
 }
 
-export function TaskRow({ task, showProject, onClick, onAIClick, onDelete }: TaskRowProps) {
+export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onToggle, selectable, selected, onSelect }: TaskRowProps) {
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
     await api.deleteTask(task.id)
@@ -25,7 +29,11 @@ export function TaskRow({ task, showProject, onClick, onAIClick, onDelete }: Tas
       className={'task-row' + (task.completed ? ' is-done' : '')}
       onClick={() => onClick && onClick(task)}
     >
-      <TaskCheckbox task={task} />
+      {selectable && (
+        <input type="checkbox" checked={selected || false} style={{ marginTop: 3, flex: 'none', accentColor: 'var(--accent)' }}
+          onChange={() => onSelect?.(task.id)} onClick={e => e.stopPropagation()} />
+      )}
+      <TaskCheckbox task={task} onToggle={onToggle} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="task-title">{task.title}</div>
         <TaskChips task={task} showProject={showProject} />

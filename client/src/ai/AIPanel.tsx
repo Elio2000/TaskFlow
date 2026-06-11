@@ -48,7 +48,7 @@ function ProposalCard({ proposals, onApply, onReject }: { proposals: any[]; onAp
 }
 
 /* ============ MentionMenu ============ */
-function MentionMenu({ items, onSelect, onClose }: { items: any[]; onSelect: (item: any) => void; onClose: () => void }) {
+function MentionMenu({ items, onSelect }: { items: any[]; onSelect: (item: any) => void; onClose: () => void }) {
   if (!items.length) return null
   return (
     <div className="popover" style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 6, width: 280, maxHeight: 240, overflowY: 'auto', padding: 4 }}>
@@ -125,6 +125,10 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [messages, thinking])
+
+  useEffect(() => {
+    if (refTask) setRefs([{ type: 'task', id: refTask.id, name: refTask.title }])
+  }, [refTask?.id])
 
   /* ============ @mention detection ============ */
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -315,7 +319,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
           {projects.current.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <div style={{ display: 'flex', gap: 2 }}>
-          {[['chat', '对话'], ['memory', '记忆'], ['agents', 'AGENTS'] as const].map(([t, l]) => (
+          {([['chat', '对话'], ['memory', '记忆'], ['agents', 'AGENTS']] as const).map(([t, l]) => (
             <button key={t} className="btn-ghost" style={{ fontSize: 12, padding: '3px 8px', background: activeTab === t ? 'var(--ai-soft)' : 'none', color: activeTab === t ? 'var(--ai)' : 'var(--text-secondary)' }}
               onClick={() => setActiveTab(t)}>{l}</button>
           ))}

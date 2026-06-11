@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { api } from '../api'
 import type { Project } from '../api'
 import { DateU } from '../utils/date'
@@ -8,6 +8,33 @@ const PROJECT_COLORS = ['#c25e4c','#c98a2e','#5b7fa6','#7a9461','#8a6fa8','#4a7f
 
 function ColorDot({ color, size = 9 }: { color: string; size?: number }) {
   return <span style={{ width: size, height: size, borderRadius: '50%', background: color, display: 'inline-block', flex: 'none' }} />
+}
+
+function CyclesSection({ route, setRoute }: { route: { view: string; projectId?: string }; setRoute: (r: { view: string; projectId?: string }) => void }) {
+  const [cycles, setCycles] = useState<any[]>([])
+  useEffect(() => { api.getCycles().then(setCycles); const id = setInterval(() => api.getCycles().then(setCycles), 10000); return () => clearInterval(id) }, [])
+  const today = new Date().toISOString().slice(0, 10)
+  const active = cycles.filter((c: any) => c.start_date <= today && c.end_date >= today)
+  if (!active.length && !cycles.length) return null
+
+  return (
+    <div style={{ padding: '4px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 8px 6px' }}>
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: .05, flex: 1 }}>冲刺</span>
+      </div>
+      {active.map((c: any) => {
+        const isActive = route.view === 'cycle' && route.projectId === c.id
+        return (
+          <button key={c.id} className={'side-item' + (isActive ? ' is-active' : '')}
+            onClick={() => setRoute({ view: 'cycle', projectId: c.id })}
+            style={{ width: '100%' }}>
+            <Icon name="flag" size={14} style={{ color: 'var(--green)', flex: 'none' }} />
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>{c.name}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 interface SidebarProps {
@@ -22,6 +49,7 @@ interface SidebarProps {
 
 export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onToggleTheme, theme }: SidebarProps) {
   const [projects, setProjects] = useState<Project[]>([])
+  const [hoveredProj, setHoveredProj] = useState<string | null>(null)
   const [addingProject, setAddingProject] = useState(false)
   const [newProjName, setNewProjName] = useState('')
   const [pickColor, setPickColor] = useState(PROJECT_COLORS[0])
@@ -98,12 +126,29 @@ export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onTog
           const isActive = (route.view === 'board' || route.view === 'list') && route.projectId === p.id
           const count = tasks.filter(t => t.project_id === p.id && !t.completed && !t.parent_id).length
           return (
-            <button key={p.id} className={'side-item' + (isActive ? ' is-active' : '')}
-              onClick={() => setRoute({ view: p.view_mode === 'board' ? 'board' : 'list', projectId: p.id })}>
-              {p.id === 'inbox' ? <Icon name="inbox" size={15} style={{ flex: 'none' }} /> : <ColorDot color={p.color} />}
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-              {count > 0 && <span className="count">{count}</span>}
-            </button>
+            <div key={p.id}
+              onMouseEnter={() => setHoveredProj(p.id)}
+              onMouseLeave={() => setHoveredProj(null)}
+              style={{ display: 'flex', alignItems: 'center' }}>
+              <button className={'side-item' + (isActive ? ' is-active' : '')} style={{ flex: 1 }}
+                onClick={() => setRoute({ view: p.view_mode === 'board' ? 'board' : 'list', projectId: p.id })}>
+                {p.id === 'inbox' ? <Icon name="inbox" size={15} style={{ flex: 'none' }} /> : <ColorDot color={p.color} />}
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                {count > 0 && <span className="count">{count}</span>}
+              </button>
+              {hoveredProj === p.id && (
+                <div style={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                  <button className="btn-icon" style={{ width: 22, height: 22 }}
+                    title="列表视图" onClick={(e) => { e.stopPropagation(); setRoute({ view: 'list', projectId: p.id }) }}>
+                    <Icon name="list" size={12} />
+                  </button>
+                  <button className="btn-icon" style={{ width: 22, height: 22 }}
+                    title="看板视图" onClick={(e) => { e.stopPropagation(); setRoute({ view: 'board', projectId: p.id }) }}>
+                    <Icon name="board" size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
           )
         })}
         {addingProject && (
@@ -124,6 +169,7 @@ export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onTog
             </div>
           </div>
         )}
+        <CyclesSection route={route} setRoute={setRoute} />
       </div>
 
       <div style={{ padding: '10px 8px', borderTop: '1px solid var(--border-soft)', display: 'flex', gap: 2, marginTop: 12 }}>

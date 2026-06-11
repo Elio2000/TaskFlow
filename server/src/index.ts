@@ -14,6 +14,7 @@ import { memoriesRoutes } from './routes/memories.js'
 import { agentsDocRoutes } from './routes/agentsDoc.js'
 import { settingsRoutes } from './routes/settings.js'
 import { aiRoutes } from './routes/ai.js'
+import { cycleRoutes } from './routes/cycles.js'
 
 declare global {
   namespace Express {
@@ -49,6 +50,7 @@ app.use('/api/chat', aiRoutes())       // POST /api/chat/stream (native DeepSeek
 app.use('/api/memories', memoriesRoutes())
 app.use('/api/agents-doc', agentsDocRoutes())
 app.use('/api/settings', settingsRoutes())
+app.use('/api/cycles', cycleRoutes())
 
 // Serve static files in production
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

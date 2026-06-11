@@ -36,58 +36,87 @@ export function taskRoutes(): Router {
 
     req.db.prepare(`INSERT INTO tasks (id,project_id,section_id,parent_id,title,description,start_date,due_date,due_time,end_time,repeat,priority,labels,reminder,completed,completed_at,sort_order,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      id,
-      body.project_id || 'inbox',
-      body.section_id || null,
-      body.parent_id || null,
-      body.title || '',
-      body.description || '',
-      body.start_date || null,
-      body.due_date || null,
-      body.due_time || null,
-      body.end_time || null,
-      body.repeat || null,
-      body.priority ?? 4,
+      id, body.project_id || 'inbox', body.section_id || null, body.parent_id || null,
+      body.title || '', body.description || '', body.start_date || null, body.due_date || null,
+      body.due_time || null, body.end_time || null, body.repeat || null, body.priority ?? 4,
       typeof body.labels === 'string' ? body.labels : JSON.stringify(body.labels || []),
-      body.reminder || null,
-      body.completed ?? 0,
-      null,
-      body.sort_order ?? 1e6,
-      t, t
+      body.reminder || null, body.completed ?? 0, null, body.sort_order ?? 1e6, t, t
     )
 
     const task = req.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
     res.status(201).json(task)
   })
 
+  // POST /api/tasks/bulk (BEFORE /:id to avoid route conflict)
+  router.post('/bulk', (req: Request, res: Response) => {
+    const { ids, updates } = req.body
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' })
+
+    const fields = ['project_id', 'section_id', 'priority', 'labels', 'due_date', 'completed', 'completed_at']
+    const sets: string[] = ['updated_at = ?']
+    const params: any[] = [now()]
+
+    for (const f of fields) {
+      if (f in updates) {
+        sets.push(`${f} = ?`)
+        params.push(f === 'labels' ? JSON.stringify(updates[f]) : updates[f])
+      }
+    }
+
+    if (sets.length === 1) return res.json({ updated: 0 })
+
+    const placeholders = ids.map(() => '?').join(',')
+    req.db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id IN (${placeholders})`).run(...params, ...ids)
+    res.json({ updated: ids.length })
+  })
+
+  // GET /api/tasks/:id/activities (BEFORE /:id)
+  router.get('/:id/activities', (req: Request, res: Response) => {
+    const activities = req.db.prepare('SELECT * FROM task_activities WHERE task_id = ? ORDER BY created_at DESC LIMIT 50').all(req.params.id)
+    res.json(activities)
+  })
+
+  // GET /api/tasks/:id
+  router.get('/:id', (req: Request, res: Response) => {
+    res.json(req.db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) || null)
+  })
+
   // PATCH /api/tasks/:id
   router.patch('/:id', (req: Request, res: Response) => {
     const body = req.body
+    const oldTask = req.db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any
+    if (!oldTask) return res.status(404).json({ error: 'Task not found' })
+
     const sets: string[] = ['updated_at = ?']
     const params: any[] = [now()]
+    const changedFields: string[] = []
 
     const fields = ['project_id', 'section_id', 'parent_id', 'title', 'description', 'start_date', 'due_date', 'due_time', 'end_time', 'repeat', 'priority', 'labels', 'reminder', 'completed', 'completed_at', 'sort_order']
     for (const f of fields) {
       if (f in body) {
         sets.push(`${f} = ?`)
         params.push(f === 'labels' ? JSON.stringify(body[f]) : body[f])
+        changedFields.push(f)
       }
     }
 
-    if (sets.length === 1) {
-      return res.json(req.db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id))
-    }
+    if (sets.length === 1) return res.json(oldTask)
 
     params.push(req.params.id)
     req.db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+
+    // Log activities
+    for (const f of changedFields) {
+      const oldVal = String(oldTask[f] ?? '')
+      const newVal = String(body[f] ?? '')
+      if (oldVal !== newVal) {
+        req.db.prepare('INSERT INTO task_activities (id,task_id,field,old_value,new_value,created_at) VALUES (?,?,?,?,?,?)')
+          .run(uid(), req.params.id, f, oldVal, newVal, now())
+      }
+    }
+
     const task = req.db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id)
     res.json(task)
-  })
-
-  // DELETE /api/tasks/:id
-  router.delete('/:id', (req: Request, res: Response) => {
-    req.db.prepare('DELETE FROM tasks WHERE id = ? OR parent_id = ?').run(req.params.id, req.params.id)
-    res.json({ deleted: true })
   })
 
   // PATCH /api/tasks/:id/toggle
@@ -105,9 +134,18 @@ export function taskRoutes(): Router {
       const completed = task.completed ? 0 : 1
       const completedAt = completed ? now() : null
       req.db.prepare('UPDATE tasks SET completed = ?, completed_at = ?, updated_at = ? WHERE id = ?').run(completed, completedAt, now(), req.params.id)
+      // Log activity
+      req.db.prepare('INSERT INTO task_activities (id,task_id,field,old_value,new_value,created_at) VALUES (?,?,?,?,?,?)')
+        .run(uid(), req.params.id, 'completed', String(task.completed), String(completed), now())
     }
     const updated = req.db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id)
     res.json(updated)
+  })
+
+  // DELETE /api/tasks/:id
+  router.delete('/:id', (req: Request, res: Response) => {
+    req.db.prepare('DELETE FROM tasks WHERE id = ? OR parent_id = ?').run(req.params.id, req.params.id)
+    res.json({ deleted: true })
   })
 
   return router
