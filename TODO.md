@@ -566,12 +566,12 @@ python3 app.py
 | P2-004 | 🟢 Feature | 30min | P1-007 | ✅ DONE |
 | P3-001 ⚠️ | 🔵 Cleanup | 30min | 全部 Phase 0+1 | ✅ DONE |
 | P3-002 | 🔵 Cleanup | 15min | P3-001 | ✅ ALREADY DONE |
-| P4-001 | 🟠 High | 5min | — | ⬜ TODO |
-| P4-002 | 🟠 High | 20min | P4-004 | ⬜ TODO |
-| P4-003 | 🟡 Medium | 10min | — | ⬜ TODO |
-| P4-004 | 🔴 Blocker | 15min | — | ⬜ TODO |
+| P4-001 | 🟠 High | 5min | — | ✅ DONE |
+| P4-002 | 🟠 High | 20min | P4-004 | ✅ DONE |
+| P4-003 | 🟡 Medium | 10min | — | ✅ DONE |
+| P4-004 | 🔴 Blocker | 15min | — | ✅ DONE |
 | P5-001 [SPLIT] | 🟢 Feature | 4-6h | — | ⬜ TODO |
-| P6-001 | 🟢 Feature | 1h | — | ⬜ TODO |
+| P6-001 | 🟢 Feature | 1h | — | ✅ ALREADY DONE |
 | P6-003 | 🟢 Feature | 45min | — | ⬜ TODO |
 | P7-001 | 🟣 Plane | 4h | P4-004 | ⬜ TODO |
 | P7-002 | 🟣 Plane | 2h | P4-004 | ⬜ TODO |
@@ -621,7 +621,7 @@ curl -s "http://localhost:3001/api/agents-doc/inbox"
 
 ---
 
-### P4-004  TaskCheckbox 切换后 UI 不刷新（卡顿根因）
+### P4-004  TaskCheckbox 切换后 UI 不刷新（卡顿根因）— ✅ DONE
 
 **问题**：`client/src/components/TaskCheckbox.tsx:22`，`onClick` 调用 `api.toggleTask` 后没有任何回调，父组件靠 5 秒轮询才能看到变化。所有视图的完成/取消都有最多 5 秒延迟。  
 **文件**：
@@ -688,7 +688,7 @@ interface TaskRowProps {
 
 ---
 
-### P4-001  InboxView 显示已完成任务
+### P4-001  InboxView 显示已完成任务 — ✅ DONE
 
 **问题**：`client/src/views/Views.tsx:70`，InboxView 的 fetch 没有过滤 `completed=0`，seed 数据里的"已完成的示例任务"会混入收件箱，用户看到带删除线的任务。  
 **文件**：`client/src/views/Views.tsx:70`
@@ -713,7 +713,7 @@ curl -s "http://localhost:3001/api/tasks?project_id=inbox&completed=0" | jq 'map
 
 ---
 
-### P4-002  BoardCard 无法直接完成任务
+### P4-002  BoardCard 无法直接完成任务 — ✅ DONE
 
 **问题**：`client/src/views/Views.tsx:237-260`，`BoardCard` 只有标题+chips，没有 checkbox，只能点开 modal 才能完成任务。参考设计每个看板卡片左侧有 checkbox。  
 **文件**：`client/src/views/Views.tsx`（BoardCard + BoardCol）
@@ -755,7 +755,7 @@ function BoardCard({ task, sectionId, onOpenTask, dragRef, handleDownRef, onRefr
 
 ---
 
-### P4-003  删除死代码文件
+### P4-003  删除死代码文件 — ✅ DONE
 
 **问题**：以下两个文件均为死代码，无任何文件 import 或挂载它们：
 1. `client/src/views/InboxView.tsx`：有独立定义的简化版 InboxView + TaskRow，从未被 import
