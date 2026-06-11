@@ -570,15 +570,16 @@ python3 app.py
 | P4-002 | 🟠 High | 20min | P4-004 | ✅ DONE |
 | P4-003 | 🟡 Medium | 10min | — | ✅ DONE |
 | P4-004 | 🔴 Blocker | 15min | — | ✅ DONE |
-| P5-001 [SPLIT] | 🟢 Feature | 4-6h | — | ⬜ TODO |
+| P5-001 [SPLIT] | 🟢 Feature | 4-6h | — | ✅ DONE |
 | P6-001 | 🟢 Feature | 1h | — | ✅ ALREADY DONE |
-| P6-003 | 🟢 Feature | 45min | — | ⬜ TODO |
-| P7-001 | 🟣 Plane | 4h | P4-004 | ⬜ TODO |
-| P7-002 | 🟣 Plane | 2h | P4-004 | ⬜ TODO |
-| P7-003 | 🟣 Plane | 2h | — | ⬜ TODO |
+| P6-003 | 🟢 Feature | 45min | — | ✅ DONE |
+| P7-001 | 🟣 Plane | 4h | P4-004 | ✅ DONE |
+| P7-002 | 🟣 Plane | 2h | P4-004 | ✅ DONE |
+| P7-003 | 🟣 Plane | 2h | — | ✅ DONE |
+| P8-001 | 🟠 High | 1h | — | ⬜ TODO |
+| P3-003 | 🔵 Cleanup | 2h | 全部 Phase 0-7 | ⬜ TODO |
 
-**建议执行顺序**：
-`P4-004 → P4-003 → P4-001 → P4-002 → P5-001 → P6-001 → P6-003 → P7-003 → P7-002 → P7-001 → P3-003`
+**建议执行顺序**：`P8-001 → P3-003`
 
 > ⚠️ P3-001 涉及永久删除文件（项目无 git），已由 PM 确认并执行完毕。
 
@@ -1529,3 +1530,47 @@ curl -s http://localhost:3001/api/tasks/$TASK_ID1 | jq .priority
 # UI：在收件箱点击任务行左侧 checkbox → 底部浮出 BulkActionBar
 # 点击"全部完成" → 所有选中任务立即消失
 ```
+
+---
+
+## Phase 8 — 视图一致性补全
+
+### P8-001  收件箱 / 导航栏视图加 list/board 切换
+
+**问题**：项目侧栏的 list/board hover 切换已实现（P6-003），但收件箱作为内置导航项无法切换 board 模式，导致收件箱功能受限。参考设计中收件箱也有看板视图。
+
+**文件**：`client/src/views/Views.tsx`（InboxView）、`client/src/App.tsx`（路由）
+
+**修改方案**：
+
+1. `InboxView` 顶部 actions slot 加视图切换按钮：
+```tsx
+// InboxView 内部加 viewMode state
+const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
+
+// ViewShell actions 传入
+actions={
+  <div style={{ display: 'flex', gap: 2, background: 'var(--bg-inset)', borderRadius: 8, padding: 3 }}>
+    <button className={viewMode === 'list' ? 'btn-primary' : 'btn-ghost'} style={{ fontSize: 12, padding: '3px 8px' }}
+      onClick={() => setViewMode('list')}><Icon name="list" size={13} /> 列表</button>
+    <button className={viewMode === 'board' ? 'btn-primary' : 'btn-ghost'} style={{ fontSize: 12, padding: '3px 8px' }}
+      onClick={() => setViewMode('board')}><Icon name="board" size={13} /> 看板</button>
+  </div>
+}
+```
+
+2. 当 `viewMode === 'board'` 时，渲染 `<BoardView projectId="inbox" />` 而不是列表：
+```tsx
+{viewMode === 'board'
+  ? <BoardView projectId="inbox" />
+  : tasks.map(t => <TaskRow ... />)
+}
+```
+
+**注意**：Board 视图的 inbox 默认没有分区，所有任务显示在"未分区"列。用户可以创建分区来创建多列看板。
+
+**验收测试**：
+- 进入收件箱，右上角出现「列表 / 看板」切换按钮
+- 点击「看板」→ 渲染 BoardView，显示任务卡片
+- 看板卡片左侧 checkbox 可完成任务
+- 切回「列表」→ 恢复 TaskRow 列表
