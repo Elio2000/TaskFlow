@@ -577,9 +577,10 @@ python3 app.py
 | P7-002 | 🟣 Plane | 2h | P4-004 | ✅ DONE |
 | P7-003 | 🟣 Plane | 2h | — | ✅ DONE |
 | P8-001 | 🟠 High | 1h | — | ⬜ TODO |
+| P8-002 | 🔴 Blocker | 20min | — | ⬜ TODO |
 | P3-003 | 🔵 Cleanup | 2h | 全部 Phase 0-7 | ⬜ TODO |
 
-**建议执行顺序**：`P8-001 → P3-003`
+**建议执行顺序**：`P8-002 → P8-001 → P3-003`
 
 > ⚠️ P3-001 涉及永久删除文件（项目无 git），已由 PM 确认并执行完毕。
 
@@ -1574,3 +1575,60 @@ actions={
 - 点击「看板」→ 渲染 BoardView，显示任务卡片
 - 看板卡片左侧 checkbox 可完成任务
 - 切回「列表」→ 恢复 TaskRow 列表
+
+---
+
+### P8-002  启动时端口占用导致 server 崩溃
+
+**问题**：`npm run dev` 启动时若 3001 端口已被占用（上次进程未正常退出），Node 会抛出未捕获的 `EADDRINUSE` 错误并崩溃，整个 dev 进程退出，无任何提示如何解决。
+
+**影响**：每次强制关闭终端后重新启动都需要手动 `kill $(lsof -ti:3001)`，体验差。
+
+**修改方案**（两处，都要做）：
+
+**1. `server/src/index.ts` — 加 error handler，给出可操作的提示**
+
+```typescript
+// 改前（直接 listen，无 error 处理）
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`)
+})
+
+// 改后
+const server = app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`)
+})
+
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n[ERROR] Port ${PORT} is already in use.`)
+    console.error(`Run: kill $(lsof -ti:${PORT})  then try again.\n`)
+    process.exit(1)
+  } else {
+    throw err
+  }
+})
+```
+
+**2. `package.json` — `dev:server` 启动前先释放端口**
+
+```json
+"dev:server": "cd server && (lsof -ti:3001 | xargs kill -9 2>/dev/null || true) && npm run dev"
+```
+
+这样 `npm run dev` 会先静默 kill 掉占用 3001 的进程，再启动 server，用户不需要手动操作。
+
+**验收测试**：
+```bash
+# 手动启动一个占用 3001 的进程
+node -e "require('net').createServer().listen(3001)"
+
+# 在另一个终端运行
+npm run dev
+# 期望：server 正常启动（自动 kill 了占用者），不报 EADDRINUSE 崩溃
+# 期望：client Vite 也正常启动
+
+# 验证
+curl http://localhost:3001/api/projects
+# 期望：返回 JSON
+```
