@@ -473,7 +473,7 @@ export function TaskGroup({ title, tasks, defaultOpen = true, accent, children }
 
 ## Phase 3 — 清理与测试基础设施
 
-### P3-001  删除 app.py 及相关 Python 文件
+### P3-001  删除 app.py 及相关 Python 文件 — ✅ DONE
 
 完成 Phase 0+1 后，确认以下文件/目录可以删除（`git rm`）：
 - `app.py`
@@ -564,12 +564,20 @@ python3 app.py
 | P2-002 | 🟢 Feature | 1h | P0-001 | ✅ DONE |
 | P2-003 | 🟢 Feature | 30min | P1-003 | ✅ DONE |
 | P2-004 | 🟢 Feature | 30min | P1-007 | ✅ DONE |
-| P3-001 ⚠️ | 🔵 Cleanup | 30min | 全部 Phase 0+1 | 待确认 |
+| P3-001 ⚠️ | 🔵 Cleanup | 30min | 全部 Phase 0+1 | ✅ DONE |
 | P3-002 | 🔵 Cleanup | 15min | P3-001 | ✅ ALREADY DONE |
+| P4-001 | 🟠 High | 5min | — | ⬜ TODO |
+| P4-002 | 🟠 High | 20min | P4-004 | ⬜ TODO |
+| P4-003 | 🟡 Medium | 10min | — | ⬜ TODO |
+| P4-004 | 🔴 Blocker | 15min | — | ⬜ TODO |
+| P5-001 [SPLIT] | 🟢 Feature | 4-6h | — | ⬜ TODO |
+| P6-001 | 🟢 Feature | 1h | — | ⬜ TODO |
+| P6-003 | 🟢 Feature | 45min | — | ⬜ TODO |
 
-**建议执行顺序**：P1-008 → P2-001 → P2-002 → P2-003 → P2-004 → P3-001 → P3-002 → P3-003
+**建议执行顺序**：
+`P4-004 → P4-003 → P4-001 → P4-002 → P5-001 → P6-001 → P6-003 → P3-003`
 
-> ⚠️ P3-001 涉及永久删除文件（项目无 git），需 PM 在对话里明确确认文件列表后才能执行。
+> ⚠️ P3-001 涉及永久删除文件（项目无 git），已由 PM 确认并执行完毕。
 
 ---
 
@@ -601,3 +609,587 @@ curl -s http://localhost:3001/api/settings/theme
 curl -s "http://localhost:3001/api/agents-doc/inbox"
 # 期望：{"content":"...","updated_at":...} 的 JSON
 ```
+
+---
+
+## Phase 4 — 新发现 Bug 修复（第二轮审核后新增）
+
+> 对比 `Claude/app/` 参考设计 vs 当前实现发现的问题。
+
+---
+
+### P4-004  TaskCheckbox 切换后 UI 不刷新（卡顿根因）
+
+**问题**：`client/src/components/TaskCheckbox.tsx:22`，`onClick` 调用 `api.toggleTask` 后没有任何回调，父组件靠 5 秒轮询才能看到变化。所有视图的完成/取消都有最多 5 秒延迟。  
+**文件**：
+- `client/src/components/TaskCheckbox.tsx`
+- `client/src/components/TaskRow.tsx`（向下传 onToggle）
+- `client/src/views/Views.tsx`（BoardCard 等处传 onRefresh）
+
+**修改方案**：
+
+```typescript
+// TaskCheckbox.tsx — 改前
+interface TaskCheckboxProps {
+  task: Task
+  size?: number
+}
+// onClick 内：api.toggleTask(task.id)  // 无回调
+
+// TaskCheckbox.tsx — 改后
+interface TaskCheckboxProps {
+  task: Task
+  size?: number
+  onToggle?: () => void   // 新增
+}
+// onClick 内：
+onClick={async (e) => {
+  e.stopPropagation()
+  await api.toggleTask(task.id)
+  onToggle?.()
+}}
+```
+
+```typescript
+// TaskRow.tsx — 改前
+interface TaskRowProps {
+  task: Task
+  onClick?: () => void
+  onAIClick?: (task: Task) => void
+  onDelete?: () => void
+}
+// 传给 TaskCheckbox 时无 onToggle
+
+// TaskRow.tsx — 改后
+interface TaskRowProps {
+  task: Task
+  onClick?: () => void
+  onAIClick?: (task: Task) => void
+  onDelete?: () => void
+  onToggle?: () => void   // 新增
+}
+// 传给 TaskCheckbox：<TaskCheckbox task={task} onToggle={onToggle} />
+```
+
+所有调用 `<TaskRow>` 的地方（InboxView、TodayView、UpcomingView、CalendarView、ListView）补传 `onToggle={fetch}`。
+
+**验收测试**：
+```bash
+# 1. 启动服务 npm run dev
+# 2. 在收件箱创建一个任务
+# 3. 点击 checkbox 完成任务
+# 期望：任务立即（<200ms）从列表消失，不需要等待
+# 4. 在今日视图完成一个任务
+# 期望：立即移入"已完成"分组
+```
+
+---
+
+### P4-001  InboxView 显示已完成任务
+
+**问题**：`client/src/views/Views.tsx:70`，InboxView 的 fetch 没有过滤 `completed=0`，seed 数据里的"已完成的示例任务"会混入收件箱，用户看到带删除线的任务。  
+**文件**：`client/src/views/Views.tsx:70`
+
+**修改方案**：
+```typescript
+// 改前
+const fetch = () => api.getTasks({ project_id: 'inbox' }).then(setTasks)
+
+// 改后
+const fetch = () => api.getTasks({ project_id: 'inbox', completed: 0 }).then(setTasks)
+```
+
+**验收测试**：
+```bash
+curl -s "http://localhost:3001/api/tasks?project_id=inbox&completed=0" | jq 'map(select(.completed == 1)) | length'
+# 期望：0（无已完成任务被返回）
+
+# UI：打开收件箱，不显示任何带删除线的任务
+# UI：完成一个任务后立即从收件箱消失（需先完成 P4-004）
+```
+
+---
+
+### P4-002  BoardCard 无法直接完成任务
+
+**问题**：`client/src/views/Views.tsx:237-260`，`BoardCard` 只有标题+chips，没有 checkbox，只能点开 modal 才能完成任务。参考设计每个看板卡片左侧有 checkbox。  
+**文件**：`client/src/views/Views.tsx`（BoardCard + BoardCol）
+
+**修改方案**：
+```typescript
+// BoardCard props — 改后（加 onRefresh）
+function BoardCard({ task, sectionId, onOpenTask, dragRef, handleDownRef, onRefresh }: {
+  task: Task; sectionId: string | null; onOpenTask: (t: Task) => void;
+  dragRef: React.MutableRefObject<DragState>; handleDownRef: React.MutableRefObject<boolean>;
+  onRefresh: () => void;   // 新增
+}) {
+  return (
+    <div data-task-id={task.id} className="board-card" draggable
+      // ...（其余 drag handlers 不变）
+      style={{ position: 'relative', paddingLeft: 44 }}>  {/* paddingLeft 增大 */}
+      {/* drag handle 位置不变 */}
+      <span className="board-drag-handle" ...>⠿</span>
+      {/* 新增：checkbox 阻止拖拽冒泡 */}
+      <div style={{ position: 'absolute', left: 22, top: '50%', transform: 'translateY(-50%)' }}
+           onMouseDown={(e) => e.stopPropagation()}>
+        <TaskCheckbox task={task} onToggle={onRefresh} />
+      </div>
+      <div style={{ fontSize: 13.5, fontWeight: 500, ... }}>{task.title}</div>
+      <TaskChips task={task} />
+    </div>
+  )
+}
+```
+
+同时在 `BoardCol` 的 `tasks.map` 里给 `BoardCard` 传 `onRefresh={onRefresh}`。
+
+**注意**：需先完成 P4-004（TaskCheckbox 加 onToggle），否则 checkbox 点击无效。
+
+**验收测试**：
+- 打开任意项目的看板视图
+- 每张卡片左侧应显示 checkbox（带优先级颜色）
+- 点击 checkbox → 卡片立即从该列消失（已完成任务被 `!t.completed` 过滤掉）
+
+---
+
+### P4-003  删除死代码文件
+
+**问题**：以下两个文件均为死代码，无任何文件 import 或挂载它们：
+1. `client/src/views/InboxView.tsx`：有独立定义的简化版 InboxView + TaskRow，从未被 import
+2. `server/src/routes/memory.ts`：P1-006 完成后被取代，未挂载到 index.ts
+
+**修改方案**：
+```bash
+rm -f client/src/views/InboxView.tsx
+rm -f server/src/routes/memory.ts
+```
+
+**验收测试**：
+```bash
+# 确认文件不存在
+ls client/src/views/InboxView.tsx 2>&1
+# 期望：No such file or directory
+
+ls server/src/routes/memory.ts 2>&1
+# 期望：No such file or directory
+
+# 确认 API 仍然正常
+curl -s http://localhost:3001/api/memories | head -c 5
+# 期望：[ 或 []
+
+curl -s http://localhost:3001/api/settings/theme
+# 期望：JSON 对象
+
+curl -s "http://localhost:3001/api/agents-doc/inbox"
+# 期望：JSON 对象
+
+# 前端无 JS 错误（打开收件箱页面，控制台无 Error）
+```
+
+---
+
+## Phase 5 — 大功能补全
+
+---
+
+### P5-001  日历日/周/月三视图 [SPLIT]
+
+**问题**：当前 `CalendarView` 只有月份网格。参考设计 `Claude/app/calendar.jsx` 有月/周/日三种视图模式，周/日视图有 24 小时时间轴，支持在时间槽点击创建任务。  
+**参考文件**：`Claude/app/calendar.jsx`  
+**文件（Client，Agent-B 负责）**：新建 `client/src/views/CalendarView.tsx`，并在 `client/src/views/Views.tsx` 中 re-export
+
+**Server 侧**：不需要改动（`/api/tasks?due_date=YYYY-MM-DD` 已够用）
+
+#### Client 实现规格
+
+**步骤 1 — 拆出独立文件**
+- 新建 `client/src/views/CalendarView.tsx`
+- 将 `Views.tsx` 中现有 `CalendarView` 函数移入，并在 `Views.tsx` 末尾 re-export：
+  ```typescript
+  export { CalendarView } from './CalendarView'
+  ```
+
+**步骤 2 — 顶部视图切换器**
+```typescript
+type CalMode = 'month' | 'week' | 'day'
+const [mode, setMode] = useState<CalMode>('month')
+const [cursor, setCursor] = useState(DateU.today())
+
+// navigate 函数：month+-1月, week+-7天, day+-1天
+const navigate = (dir: 1 | -1) => {
+  if (mode === 'month') setCursor(DateU.addMonths(cursor, dir))
+  else if (mode === 'week') setCursor(DateU.addDays(cursor, dir * 7))
+  else setCursor(DateU.addDays(cursor, dir))
+}
+```
+
+顶部 toolbar（在 ViewShell 的 actions slot 或 header 下方）：
+```tsx
+<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+  <button className="btn-ghost" onClick={() => navigate(-1)}>‹</button>
+  <button className="btn-ghost" onClick={() => setCursor(DateU.today())}>今天</button>
+  <button className="btn-ghost" onClick={() => navigate(+1)}>›</button>
+  <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{titleFor(mode, cursor)}</span>
+  {(['month','week','day'] as CalMode[]).map(m => (
+    <button key={m}
+      className={mode === m ? 'btn-primary' : 'btn-ghost'}
+      style={{ fontSize: 12.5, padding: '3px 10px' }}
+      onClick={() => setMode(m)}>
+      {{ month: '月', week: '周', day: '日' }[m]}
+    </button>
+  ))}
+</div>
+```
+
+**titleFor 函数**（参考 Claude/app/calendar.jsx）：
+- month：`2026年6月`
+- week：`6月9日 – 6月15日`
+- day：`6月11日 周四`
+
+**步骤 3 — MonthView 增强（任务 pill）**
+
+当前月视图每格只显示 1-3 个颜色点，改为显示任务 pill 列表：
+```typescript
+// 在月格子内
+const cellTasks = tasks.filter(t => t.due_date === cell.date && !t.completed)
+// 渲染
+{cellTasks.slice(0, 3).map(t => (
+  <div key={t.id}
+    onClick={(e) => { e.stopPropagation(); setTaskModal(t.id) }}
+    style={{
+      fontSize: 11, padding: '1px 4px', borderRadius: 3, marginBottom: 1,
+      background: 'var(--accent-soft)', color: 'var(--accent-text)',
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      cursor: 'pointer'
+    }}>
+    {t.title}
+  </div>
+))}
+{cellTasks.length > 3 && (
+  <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>+{cellTasks.length - 3}</div>
+)}
+```
+
+**步骤 4 — WeekView / DayView（TimeGrid）**
+
+新建组件 `TimeGrid`（在 CalendarView.tsx 内，不导出）：
+
+```typescript
+const HOUR_PX = 56  // 每小时高度（px）
+
+function TimeGrid({ dates, tasks, onSlotClick, onOpenTask }: {
+  dates: string[]      // 周视图 7 个日期，日视图 1 个
+  tasks: Task[]
+  onSlotClick: (date: string, hour: number) => void
+  onOpenTask: (t: Task) => void
+}) {
+  const hours = Array.from({ length: 24 }, (_, i) => i)
+  
+  return (
+    <div style={{ display: 'flex', flex: 1, overflowY: 'auto' }}>
+      {/* 时间轴列 */}
+      <div style={{ width: 48, flexShrink: 0, position: 'relative' }}>
+        {hours.map(h => (
+          <div key={h} style={{ height: HOUR_PX, display: 'flex', alignItems: 'flex-start',
+            paddingTop: 2, paddingRight: 8, fontSize: 11, color: 'var(--text-tertiary)',
+            justifyContent: 'flex-end' }}>
+            {h === 0 ? '' : `${h}:00`}
+          </div>
+        ))}
+      </div>
+      
+      {/* 日期列 */}
+      {dates.map(date => (
+        <DayCol key={date} date={date}
+          tasks={tasks.filter(t => t.due_date === date && t.due_time && !t.completed)}
+          allDayTasks={tasks.filter(t => t.due_date === date && !t.due_time && !t.completed)}
+          onSlotClick={(hour) => onSlotClick(date, hour)}
+          onOpenTask={onOpenTask} />
+      ))}
+    </div>
+  )
+}
+```
+
+`DayCol` 组件：
+```typescript
+function DayCol({ date, tasks, allDayTasks, onSlotClick, onOpenTask }) {
+  const isToday = date === DateU.today()
+  const [currentMin, setCurrentMin] = useState(getNowMinutes())
+  
+  useEffect(() => {
+    const id = setInterval(() => setCurrentMin(getNowMinutes()), 60000)
+    return () => clearInterval(id)
+  }, [])
+  
+  return (
+    <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid var(--border-soft)', position: 'relative' }}>
+      {/* 全天任务行 */}
+      <div style={{ minHeight: 32, borderBottom: '1px solid var(--border-soft)', padding: '2px 4px' }}>
+        {allDayTasks.slice(0, 2).map(t => (
+          <div key={t.id} onClick={() => onOpenTask(t)} style={{ fontSize: 11, padding: '1px 4px',
+            borderRadius: 3, background: 'var(--accent-soft)', color: 'var(--accent-text)',
+            cursor: 'pointer', marginBottom: 2, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            {t.title}
+          </div>
+        ))}
+      </div>
+      
+      {/* 时间格子 */}
+      <div style={{ position: 'relative', height: 24 * HOUR_PX }}>
+        {/* 当天时间线 */}
+        {isToday && (
+          <div style={{ position: 'absolute', left: 0, right: 0,
+            top: currentMin * (HOUR_PX / 60),
+            height: 2, background: 'var(--p1)', zIndex: 2 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--p1)',
+              position: 'absolute', left: -4, top: -3 }} />
+          </div>
+        )}
+        
+        {/* 每小时点击区 */}
+        {Array.from({ length: 24 }, (_, h) => (
+          <div key={h} onClick={() => onSlotClick(h)}
+            style={{ position: 'absolute', left: 0, right: 0,
+              top: h * HOUR_PX, height: HOUR_PX,
+              borderBottom: '1px solid var(--border-soft)',
+              cursor: 'pointer' }}
+            onMouseOver={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+            onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
+          />
+        ))}
+        
+        {/* 有时间的任务 */}
+        {tasks.map(t => {
+          const [hh, mm] = (t.due_time || '00:00').split(':').map(Number)
+          const top = hh * HOUR_PX + mm * (HOUR_PX / 60)
+          return (
+            <div key={t.id} onClick={() => onOpenTask(t)}
+              style={{ position: 'absolute', left: 4, right: 4, top, minHeight: 24,
+                background: 'var(--accent-soft)', color: 'var(--accent-text)',
+                borderRadius: 4, padding: '2px 6px', fontSize: 12, cursor: 'pointer',
+                zIndex: 1, overflow: 'hidden' }}>
+              <div style={{ fontWeight: 500 }}>{t.title}</div>
+              <div style={{ fontSize: 10 }}>{t.due_time}</div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+```
+
+`getNowMinutes` 工具函数：
+```typescript
+const getNowMinutes = () => {
+  const n = new Date()
+  return n.getHours() * 60 + n.getMinutes()
+}
+```
+
+**步骤 5 — CreatePanel（时间槽点击后创建任务）**
+```typescript
+const [createSlot, setCreateSlot] = useState<{ date: string; time: string } | null>(null)
+
+// 在 CalendarView 末尾（与 taskModal 并列）：
+{createSlot && (
+  <div className="modal-scrim" onClick={() => setCreateSlot(null)}>
+    <div className="modal-card" style={{ maxWidth: 340 }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ fontWeight: 600, marginBottom: 12 }}>新任务</div>
+      <input autoFocus placeholder="任务名称…" id="create-title"
+        style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8,
+          padding: '8px 12px', fontSize: 14, marginBottom: 8 }} />
+      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+        {DateU.human(createSlot.date)} {createSlot.time}
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button className="btn-ghost" onClick={() => setCreateSlot(null)}>取消</button>
+        <button className="btn-primary" onClick={async () => {
+          const title = (document.getElementById('create-title') as HTMLInputElement).value.trim()
+          if (!title) return
+          await api.addTask({ title, due_date: createSlot.date, due_time: createSlot.time, project_id: 'inbox' })
+          setCreateSlot(null)
+          fetch()
+        }}>创建</button>
+      </div>
+    </div>
+  </div>
+)}
+```
+
+**辅助工具函数（在 `client/src/utils/date.ts` 中补充）**：
+```typescript
+// 加减月份
+addMonths: (s: string, n: number): string => {
+  const d = DateU.parse(s)
+  d.setMonth(d.getMonth() + n)
+  return DateU.fmt(d)
+}
+
+// 获取当周7天
+weekDates: (s: string): string[] => {
+  const d = DateU.parse(s)
+  const dow = d.getDay() === 0 ? 6 : d.getDay() - 1  // 周一为0
+  const monday = new Date(d)
+  monday.setDate(d.getDate() - dow)
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(monday)
+    day.setDate(monday.getDate() + i)
+    return DateU.fmt(day)
+  })
+}
+```
+
+**验收测试**：
+```bash
+# 打开日历页面，期望默认显示月视图（含任务 pill）
+# 点击"周"→ 显示当前周 7 列时间轴
+# 点击"日"→ 显示今天单列时间轴
+# 时间轴上有红色当前时间指示线
+# 有 due_time 的任务（"回复审稿意见邮件 16:00"）在周/日视图对应时间位置显示
+# 点击时间轴空白区域 → 弹出创建面板，预填日期和时间
+# 月视图格子内有任务 pill，>3 条显示 +N
+```
+
+---
+
+## Phase 6 — 体验补全
+
+---
+
+### P6-001  TaskGroup 可折叠
+
+**问题**：TodayView 的 overdue/today/done 分组无折叠交互，参考设计有 chevron 可折叠。  
+**文件**：新建 `client/src/components/TaskGroup.tsx`，改 `client/src/views/Views.tsx`
+
+**修改方案**：
+
+新建 `client/src/components/TaskGroup.tsx`：
+```typescript
+import { useState, ReactNode } from 'react'
+import { Icon } from '../icons'
+
+interface TaskGroupProps {
+  title: string
+  count: number
+  defaultOpen?: boolean
+  accentColor?: string
+  children: ReactNode
+}
+
+export function TaskGroup({ title, count, defaultOpen = true, accentColor, children }: TaskGroupProps) {
+  const [open, setOpen] = useState(defaultOpen)
+
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0',
+          cursor: 'pointer', userSelect: 'none', marginBottom: open ? 6 : 0 }}>
+        <Icon name="chevron-right" size={14}
+          style={{ color: accentColor || 'var(--text-tertiary)',
+            transform: open ? 'rotate(90deg)' : 'none',
+            transition: 'transform .15s' }} />
+        <span style={{ fontSize: 12.5, fontWeight: 600,
+          color: accentColor || 'var(--text-secondary)' }}>{title}</span>
+        <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)',
+          background: 'var(--bg-inset)', borderRadius: 9, padding: '0 6px' }}>{count}</span>
+      </div>
+      {open && children}
+    </div>
+  )
+}
+```
+
+在 `Views.tsx` 的 `TodayView` 里用 `<TaskGroup>` 包裹三组（先 import 组件）：
+```typescript
+import { TaskGroup } from '../components/TaskGroup'
+
+// overdue 组
+<TaskGroup title="逾期" count={overdue.length} accentColor="var(--p1)" defaultOpen={true}>
+  {overdue.map(t => <TaskRow key={t.id} task={t} ... />)}
+</TaskGroup>
+
+// today 组
+<TaskGroup title="今天" count={todayTasks.length} defaultOpen={true}>
+  {todayTasks.map(t => <TaskRow key={t.id} task={t} ... />)}
+</TaskGroup>
+
+// done 组
+<TaskGroup title="已完成" count={done.length} defaultOpen={false}>
+  {done.map(t => <TaskRow key={t.id} task={t} ... />)}
+</TaskGroup>
+```
+
+**验收**：
+- 今日视图三个分组各有 chevron，点击折叠/展开
+- 默认"已完成"分组折叠，其他展开
+- 折叠后 children 不渲染（节省 DOM）
+
+---
+
+### P6-003  Sidebar 项目视图切换（board/list）
+
+**问题**：侧栏点击项目只能进入默认视图（list），无法快速切换 board/list。  
+**文件**：`client/src/components/Sidebar.tsx`
+
+**修改方案**：在项目行 hover 时显示 board/list 图标按钮：
+```typescript
+// 在项目行容器中，已有点击 setRoute 的逻辑
+// 增加 useState 管理 hoveredProject
+const [hoveredProj, setHoveredProj] = useState<string | null>(null)
+
+// 项目行：
+<div
+  onMouseEnter={() => setHoveredProj(proj.id)}
+  onMouseLeave={() => setHoveredProj(null)}
+  style={{ display: 'flex', alignItems: 'center', ... }}>
+  
+  {/* 项目名（点击进入当前视图或 list 默认）*/}
+  <span onClick={() => setRoute({ view: 'list', projectId: proj.id })} style={{ flex: 1, ... }}>
+    {proj.name}
+  </span>
+  
+  {/* hover 时显示视图切换按钮 */}
+  {hoveredProj === proj.id && (
+    <div style={{ display: 'flex', gap: 2 }} onClick={(e) => e.stopPropagation()}>
+      <button className="btn-icon" style={{ width: 20, height: 20 }}
+        title="列表视图"
+        onClick={() => setRoute({ view: 'list', projectId: proj.id })}>
+        <Icon name="list" size={12} />
+      </button>
+      <button className="btn-icon" style={{ width: 20, height: 20 }}
+        title="看板视图"
+        onClick={() => setRoute({ view: 'board', projectId: proj.id })}>
+        <Icon name="board" size={12} />
+      </button>
+    </div>
+  )}
+</div>
+```
+
+**注意**：需确认 `Icon` 中存在 `"board"` 和 `"list"` 名称，若不存在使用 `"columns"` / `"align-left"` 替代。
+
+**验收**：
+- 鼠标悬停在侧栏项目上 → 出现 list/board 图标按钮
+- 点击 board 图标 → 路由切换到看板视图
+- 点击 list 图标 → 路由切换到列表视图
+
+---
+
+## Phase 7 — Plane 参考功能（待讨论决定优先级）
+
+> 以下功能来自 `../plane/` 参考，PM 和用户讨论后决定是否加入执行列表。
+
+| 功能 | Plane 参考位置 | 说明 | 复杂度 |
+|------|----------------|------|--------|
+| **Cycle（冲刺/周期）** | `apps/web/core/store/cycle/` | 时间盒，把任务圈入一个周期，有进度统计 | 中 |
+| **表格视图（Spreadsheet）** | TanStack Table + `issue-layouts/spreadsheet/` | 所有任务用表格展示，内联编辑 | 高 |
+| **Activity log** | `IssueActivityStore` | 任务 modal 底部显示修改历史 | 中 |
+| **批量操作** | `IssueUpdateBulk` | 多选任务批量改优先级/状态/日期 | 低 |
+| **Pragmatic DnD** | `@atlaskit/pragmatic-drag-and-drop` | 替换当前 HTML5 drag，体验更好 | 低 |
+| **Optimistic update** | MobX runInAction 模式 | 不换 MobX，只用 useState 做乐观更新 | 低-中 |
+
+> **建议讨论顺序**：先做 Cycle（对个人规划最有价值），再讨论 Activity log。
+> 不建议做：多工作区、Webhook 规则引擎、富文本 Pages、Burn-down 图表。
