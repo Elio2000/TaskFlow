@@ -573,9 +573,12 @@ python3 app.py
 | P5-001 [SPLIT] | 🟢 Feature | 4-6h | — | ⬜ TODO |
 | P6-001 | 🟢 Feature | 1h | — | ⬜ TODO |
 | P6-003 | 🟢 Feature | 45min | — | ⬜ TODO |
+| P7-001 | 🟣 Plane | 4h | P4-004 | ⬜ TODO |
+| P7-002 | 🟣 Plane | 2h | P4-004 | ⬜ TODO |
+| P7-003 | 🟣 Plane | 2h | — | ⬜ TODO |
 
 **建议执行顺序**：
-`P4-004 → P4-003 → P4-001 → P4-002 → P5-001 → P6-001 → P6-003 → P3-003`
+`P4-004 → P4-003 → P4-001 → P4-002 → P5-001 → P6-001 → P6-003 → P7-003 → P7-002 → P7-001 → P3-003`
 
 > ⚠️ P3-001 涉及永久删除文件（项目无 git），已由 PM 确认并执行完毕。
 
@@ -1193,3 +1196,336 @@ const [hoveredProj, setHoveredProj] = useState<string | null>(null)
 
 > **建议讨论顺序**：先做 Cycle（对个人规划最有价值），再讨论 Activity log。
 > 不建议做：多工作区、Webhook 规则引擎、富文本 Pages、Burn-down 图表。
+
+---
+
+## Phase 7 — Plane 参考功能移植
+
+> 参考来源：`../plane/apps/web/core/store/` 和 `../plane/packages/types/`
+
+---
+
+### P7-001  Cycle（冲刺/周期）
+
+**功能描述**：用户可以创建一个有开始/结束日期的"冲刺"，把来自任何项目的任务拉进来，形成一个时间盒。Sidebar 显示当前活跃 Cycle，查看 Cycle 内任务进度。
+
+**DB 变更**（需 PM 确认）：
+
+在 `server/src/db.ts` 的 `db.exec` 里追加：
+```sql
+CREATE TABLE IF NOT EXISTS cycles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cycle_tasks (
+  cycle_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  added_at TEXT NOT NULL,
+  PRIMARY KEY (cycle_id, task_id),
+  FOREIGN KEY (cycle_id) REFERENCES cycles(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+```
+
+**Server 新路由**：新建 `server/src/routes/cycles.ts`，挂载到 `app.use('/api/cycles', cycleRoutes())`
+
+API：
+```
+GET    /api/cycles                    → 全部 cycles（按 start_date 排序）
+POST   /api/cycles                    → 创建（body: name, start_date, end_date）
+PATCH  /api/cycles/:id                → 更新
+DELETE /api/cycles/:id                → 删除（cascade 删 cycle_tasks）
+GET    /api/cycles/:id/tasks          → 该 cycle 内所有任务（JOIN tasks）
+POST   /api/cycles/:id/tasks          → 加任务进 cycle（body: task_id）
+DELETE /api/cycles/:id/tasks/:task_id → 从 cycle 移除任务
+```
+
+**Client 改动**：
+
+1. `client/src/api.ts`：加 Cycle CRUD 和 cycle_tasks 的 fetch 封装
+
+2. `client/src/components/Sidebar.tsx`：在 Projects 下方加 "冲刺" section
+   - 显示当前活跃 cycle（today 在 start_date～end_date 范围内）
+   - 点击进入 CycleView
+
+3. 新建 `client/src/views/CycleView.tsx`：
+   - 显示 cycle 内任务列表
+   - 顶部：cycle 名称、日期区间、完成进度条（completed/total）
+   - 右侧"添加任务"：搜索框弹出所有未完成任务，点击加入 cycle
+   - 每行任务右侧有"移出冲刺"按钮（×）
+   - QuickComposer 创建任务并自动加入当前 cycle
+
+4. Sidebar 加 "+ 新建冲刺" 按钮，弹出简单表单（名称 + 起止日期）
+
+**验收测试**：
+```bash
+# 创建 cycle
+CYCLE_ID=$(curl -s -X POST http://localhost:3001/api/cycles \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"本周冲刺","start_date":"2026-06-09","end_date":"2026-06-15"}' | jq -r .id)
+
+# 加任务进 cycle
+TASK_ID=$(curl -s http://localhost:3001/api/tasks | jq -r '.[0].id')
+curl -s -X POST http://localhost:3001/api/cycles/$CYCLE_ID/tasks \
+  -H 'Content-Type: application/json' \
+  -d "{\"task_id\":\"$TASK_ID\"}"
+
+# 查询 cycle 内任务
+curl -s http://localhost:3001/api/cycles/$CYCLE_ID/tasks | jq 'length'
+# 期望：1
+
+# UI：Sidebar 出现"冲刺"section，点击进入 CycleView 显示任务
+```
+
+---
+
+### P7-002  Activity Log（任务修改历史）
+
+**功能描述**：每次对任务的字段修改都记录一条 activity，在 TaskModal 底部显示"谁在什么时候把什么字段从 X 改成了 Y"。个人工具里"谁"就是"你自己"，所以只记录字段、旧值、新值、时间。
+
+**DB 变更**（需 PM 确认）：
+
+在 `server/src/db.ts` 追加：
+```sql
+CREATE TABLE IF NOT EXISTS task_activities (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  field TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+```
+
+**Server 改动**：
+
+1. `server/src/routes/tasks.ts`，在 PATCH handler 里，更新成功后写入 activity：
+```typescript
+// PATCH /api/tasks/:id 更新后
+for (const f of changedFields) {
+  const oldVal = (oldTask as any)[f]
+  const newVal = body[f]
+  if (String(oldVal) !== String(newVal)) {
+    req.db.prepare(
+      'INSERT INTO task_activities (id,task_id,field,old_value,new_value,created_at) VALUES (?,?,?,?,?,?)'
+    ).run(uid(), req.params.id, f, String(oldVal ?? ''), String(newVal ?? ''), now())
+  }
+}
+```
+
+2. 同样在 `toggle` handler 里写入 `completed` 字段的 activity。
+
+3. 新增路由：`GET /api/tasks/:id/activities` → 按 created_at DESC 返回最近 50 条
+
+**Client 改动**：
+
+`client/src/components/TaskModal.tsx`：在 modal 底部（Delete 按钮下方）加 Activity 区块：
+
+```typescript
+// 组件内加 activities state
+const [activities, setActivities] = useState<Activity[]>([])
+useEffect(() => {
+  api.getTaskActivities(taskId).then(setActivities).catch(() => {})
+}, [taskId])
+
+// 渲染（仅当 activities.length > 0 时显示）
+{activities.length > 0 && (
+  <div style={{ marginTop: 20, borderTop: '1px solid var(--border-soft)', paddingTop: 12 }}>
+    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 8 }}>修改记录</div>
+    {activities.map(a => (
+      <div key={a.id} style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', gap: 6 }}>
+        <span style={{ color: 'var(--text-tertiary)' }}>{DateU.human(a.created_at.slice(0,10))}</span>
+        <span>将 <b>{FIELD_LABELS[a.field] || a.field}</b> 从
+          <code style={{ background: 'var(--bg-inset)', borderRadius: 3, padding: '0 3px' }}>{a.old_value || '空'}</code>
+          改为
+          <code style={{ background: 'var(--bg-inset)', borderRadius: 3, padding: '0 3px' }}>{a.new_value || '空'}</code>
+        </span>
+      </div>
+    ))}
+  </div>
+)}
+```
+
+FIELD_LABELS 映射（中文字段名）：
+```typescript
+const FIELD_LABELS: Record<string, string> = {
+  title: '标题', description: '描述', priority: '优先级',
+  due_date: '截止日期', due_time: '截止时间', completed: '完成状态',
+  labels: '标签', project_id: '项目', section_id: '分区', repeat: '重复'
+}
+```
+
+**`client/src/api.ts` 新增**：
+```typescript
+getTaskActivities: (taskId: string) =>
+  request<Activity[]>(`/api/tasks/${taskId}/activities`)
+```
+
+**验收测试**：
+```bash
+# 创建任务
+TASK_ID=$(curl -s -X POST http://localhost:3001/api/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"测试活动记录"}' | jq -r .id)
+
+# 修改优先级
+curl -s -X PATCH http://localhost:3001/api/tasks/$TASK_ID \
+  -H 'Content-Type: application/json' \
+  -d '{"priority":1}'
+
+# 查询 activity
+curl -s http://localhost:3001/api/tasks/$TASK_ID/activities | jq '.[0]'
+# 期望：{"field":"priority","old_value":"4","new_value":"1",...}
+
+# UI：打开任务 modal，底部显示"将优先级从 4 改为 1"
+```
+
+---
+
+### P7-003  批量操作（Bulk Actions）
+
+**功能描述**：在列表/收件箱视图，可以多选任务，然后批量修改优先级、截止日期、项目，或批量删除/完成。参考 Plane 的 `IssueUpdateBulk`。
+
+**DB 变更**：不需要（用现有 PATCH 接口批量调用）
+
+**Server 新接口**：`POST /api/tasks/bulk`
+
+在 `server/src/routes/tasks.ts` 加：
+```typescript
+// POST /api/tasks/bulk
+// body: { ids: string[], updates: Partial<Task> }
+router.post('/bulk', (req: Request, res: Response) => {
+  const { ids, updates } = req.body
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' })
+  
+  const fields = ['project_id', 'section_id', 'priority', 'labels', 'due_date', 'completed', 'completed_at']
+  const sets: string[] = ['updated_at = ?']
+  const params: any[] = [now()]
+  
+  for (const f of fields) {
+    if (f in updates) {
+      sets.push(`${f} = ?`)
+      params.push(f === 'labels' ? JSON.stringify((updates as any)[f]) : (updates as any)[f])
+    }
+  }
+  
+  if (sets.length === 1) return res.json({ updated: 0 })
+  
+  const placeholders = ids.map(() => '?').join(',')
+  req.db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id IN (${placeholders})`)
+    .run(...params, ...ids)
+  
+  res.json({ updated: ids.length })
+})
+```
+
+**Client 改动**：
+
+1. `client/src/components/TaskRow.tsx`：加 `selectable` 和 `selected` props，显示 checkbox 多选
+
+2. 新建 `client/src/components/BulkActionBar.tsx`：底部浮动 action bar（当 selectedIds.length > 0 时显示）
+
+```typescript
+export function BulkActionBar({ ids, onDone, onClear }: {
+  ids: string[]; onDone: () => void; onClear: () => void
+}) {
+  return (
+    <div style={{
+      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+      background: 'var(--bg-card)', border: '1px solid var(--border)',
+      borderRadius: 12, padding: '10px 16px', display: 'flex', alignItems: 'center',
+      gap: 10, boxShadow: '0 4px 20px rgba(0,0,0,.15)', zIndex: 500
+    }}>
+      <span style={{ fontSize: 13, fontWeight: 600 }}>已选 {ids.length} 条</span>
+      
+      <button className="btn-ghost" onClick={async () => {
+        await api.bulkUpdate(ids, { completed: 1, completed_at: new Date().toISOString() })
+        onDone()
+      }}>✓ 全部完成</button>
+      
+      <button className="btn-ghost" onClick={async () => {
+        await api.bulkUpdate(ids, { priority: 1 })
+        onDone()
+      }}>🔴 设为 P1</button>
+      
+      <select style={{ fontSize: 12.5, border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px' }}
+        onChange={async (e) => {
+          if (!e.target.value) return
+          await api.bulkUpdate(ids, { due_date: e.target.value })
+          onDone()
+        }}>
+        <option value="">设置截止日期…</option>
+        <option value={DateU.today()}>今天</option>
+        <option value={DateU.addDays(DateU.today(), 1)}>明天</option>
+        <option value={DateU.addDays(DateU.today(), 7)}>下周</option>
+      </select>
+      
+      <button className="btn-ghost" style={{ color: 'var(--p1)' }} onClick={async () => {
+        if (!confirm(`确认删除 ${ids.length} 条任务？`)) return
+        await Promise.all(ids.map(id => api.deleteTask(id)))
+        onDone()
+      }}>🗑 删除</button>
+      
+      <button className="btn-icon" onClick={onClear} style={{ width: 24, height: 24 }}>✕</button>
+    </div>
+  )
+}
+```
+
+3. 在 `InboxView`、`TodayView`、`ListView` 里加 `selectedIds` state 和 `BulkActionBar`：
+```typescript
+const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+// 任务行：长按或 Shift+Click 触发多选（简化版：只做点击选中）
+// 给 TaskRow 传：
+<TaskRow
+  selectable
+  selected={selectedIds.has(t.id)}
+  onSelect={(id) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })}
+  ...
+/>
+
+{selectedIds.size > 0 && (
+  <BulkActionBar
+    ids={[...selectedIds]}
+    onDone={() => { setSelectedIds(new Set()); fetch() }}
+    onClear={() => setSelectedIds(new Set())}
+  />
+)}
+```
+
+**`client/src/api.ts` 新增**：
+```typescript
+bulkUpdate: (ids: string[], updates: Partial<Task>) =>
+  request('/api/tasks/bulk', { method: 'POST', body: JSON.stringify({ ids, updates }) })
+```
+
+**验收测试**：
+```bash
+# 批量更新优先级
+TASK_ID1=$(curl -s http://localhost:3001/api/tasks | jq -r '.[0].id')
+TASK_ID2=$(curl -s http://localhost:3001/api/tasks | jq -r '.[1].id')
+
+curl -s -X POST http://localhost:3001/api/tasks/bulk \
+  -H 'Content-Type: application/json' \
+  -d "{\"ids\":[\"$TASK_ID1\",\"$TASK_ID2\"],\"updates\":{\"priority\":1}}"
+# 期望：{"updated":2}
+
+# 验证
+curl -s http://localhost:3001/api/tasks/$TASK_ID1 | jq .priority
+# 期望：1
+
+# UI：在收件箱点击任务行左侧 checkbox → 底部浮出 BulkActionBar
+# 点击"全部完成" → 所有选中任务立即消失
+```
