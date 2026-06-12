@@ -5,8 +5,10 @@ import { Sidebar } from './components/Sidebar'
 import { SearchOverlay } from './components/SearchOverlay'
 import { TaskModal } from './components/TaskModal'
 import { AIPanel } from './ai/AIPanel'
-import { TodayView, InboxView, UpcomingView, CalendarView, BoardView, ListView } from './views/Views'
+import { TodayView, InboxView, UpcomingView, CalendarView } from './views/Views'
+import { ProjectView } from './views/ProjectView'
 import { CycleView } from './views/CycleView'
+import { LabelView } from './views/LabelView'
 import { Icon } from './icons'
 import './style.css'
 
@@ -31,7 +33,7 @@ export default function App() {
   const [aiProjectId, setAiProjectId] = useState('inbox')
   const [aiRefTask] = useState<Task | null>(null)
   const [showSearch, setShowSearch] = useState(false)
-  const [aiLayout, setAiLayout] = useState<'float' | 'sidebar' | 'bottom'>('float')
+  const [aiLayout, setAiLayout] = useState<'float' | 'sidebar' | 'bottom'>('sidebar')
   const [tasks, setTasks] = useState<Task[]>([])
 
   // Load theme from API on mount
@@ -83,9 +85,9 @@ export default function App() {
       case 'today': return <TodayView />
       case 'upcoming': return <UpcomingView />
       case 'calendar': return <CalendarView />
-      case 'board': return <BoardView projectId={route.projectId || 'inbox'} />
-      case 'list': return <ListView projectId={route.projectId || 'inbox'} />
+      case 'project': return <ProjectView projectId={route.projectId || 'inbox'} />
       case 'cycle': return <CycleView cycleId={route.projectId || ''} />
+      case 'label': return <LabelView labelId={route.projectId || ''} />
       default: return <TodayView />
     }
   }

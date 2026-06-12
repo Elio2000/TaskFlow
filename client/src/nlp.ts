@@ -96,7 +96,7 @@ interface NLPResult {
   tokens: Token[]
 }
 
-export function parse(text: string, ctx: NLPContext = {}): NLPResult {
+export function parse(text: string, _ctx: NLPContext = {}): NLPResult {
   const base = new Date()
   const result: NLPResult = {
     title: text, due_date: null, due_time: null, priority: null,
@@ -116,27 +116,24 @@ export function parse(text: string, ctx: NLPContext = {}): NLPResult {
     claim(s, pm.index + pm[0].length, 'priority', 'P' + pm[1])
   }
 
-  // 2. #Project
+  // 2. #Label (Obsidian style)
   for (const m of text.matchAll(/#([^\s#@]+)/g)) {
     const name = m[1]
-    const proj = (ctx.projects || []).find((p) => p.name === name) ||
-      (ctx.projects || []).find((p) => p.name.startsWith(name)) ||
-      (ctx.projects || []).find((p) => p.name.toLowerCase().includes(name.toLowerCase()))
-    if (proj && !overlaps(m.index, m.index + m[0].length)) {
-      result.project_id = proj.id
-      claim(m.index, m.index + m[0].length, 'project', proj.name)
-      break
+    if (!overlaps(m.index, m.index + m[0].length)) {
+      // Push as label - caller should resolve/create label ids
+      result.label_ids.push(name)
+      claim(m.index, m.index + m[0].length, 'label', name)
     }
   }
 
-  // 3. @Label
+  // 3. @Label (legacy, still supported)
   for (const m of text.matchAll(/@([^\s#@]+)/g)) {
     const name = m[1]
-    const lbl = (ctx.labels || []).find((l) => l.name === name) ||
-      (ctx.labels || []).find((l) => l.name.startsWith(name))
-    if (lbl && !overlaps(m.index, m.index + m[0].length)) {
-      result.label_ids.push(lbl.id)
-      claim(m.index, m.index + m[0].length, 'label', lbl.name)
+    if (!overlaps(m.index, m.index + m[0].length)) {
+      if (!result.label_ids.includes(name)) {
+        result.label_ids.push(name)
+      }
+      claim(m.index, m.index + m[0].length, 'label', name)
     }
   }
 

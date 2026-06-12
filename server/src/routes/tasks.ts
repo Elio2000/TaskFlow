@@ -3,6 +3,22 @@ import { v4 as uid } from 'uuid'
 
 const now = () => new Date().toISOString()
 
+function normalizeLabels(value: any): string {
+  if (Array.isArray(value)) return JSON.stringify(value.filter((v: any) => typeof v === 'string'))
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed)) return JSON.stringify(parsed.filter((v: any) => typeof v === 'string'))
+      // double-encoded: try again
+      if (typeof parsed === 'string') {
+        const parsed2 = JSON.parse(parsed)
+        if (Array.isArray(parsed2)) return JSON.stringify(parsed2.filter((v: any) => typeof v === 'string'))
+      }
+    } catch {}
+  }
+  return '[]'
+}
+
 export function taskRoutes(): Router {
   const router = Router()
 
@@ -39,7 +55,7 @@ export function taskRoutes(): Router {
       id, body.project_id || 'inbox', body.section_id || null, body.parent_id || null,
       body.title || '', body.description || '', body.start_date || null, body.due_date || null,
       body.due_time || null, body.end_time || null, body.repeat || null, body.priority ?? 4,
-      typeof body.labels === 'string' ? body.labels : JSON.stringify(body.labels || []),
+      normalizeLabels(body.labels),
       body.reminder || null, body.completed ?? 0, null, body.sort_order ?? 1e6, t, t
     )
 
@@ -59,7 +75,7 @@ export function taskRoutes(): Router {
     for (const f of fields) {
       if (f in updates) {
         sets.push(`${f} = ?`)
-        params.push(f === 'labels' ? JSON.stringify(updates[f]) : updates[f])
+        params.push(f === 'labels' ? normalizeLabels(updates[f]) : updates[f])
       }
     }
 
@@ -95,7 +111,7 @@ export function taskRoutes(): Router {
     for (const f of fields) {
       if (f in body) {
         sets.push(`${f} = ?`)
-        params.push(f === 'labels' ? JSON.stringify(body[f]) : body[f])
+        params.push(f === 'labels' ? normalizeLabels(body[f]) : body[f])
         changedFields.push(f)
       }
     }

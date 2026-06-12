@@ -48,12 +48,13 @@ function ProposalCard({ proposals, onApply, onReject }: { proposals: any[]; onAp
 }
 
 /* ============ MentionMenu ============ */
-function MentionMenu({ items, onSelect }: { items: any[]; onSelect: (item: any) => void; onClose: () => void }) {
+function MentionMenu({ items, onSelect, selectedIndex }: { items: any[]; onSelect: (item: any) => void; selectedIndex: number }) {
   if (!items.length) return null
   return (
-    <div className="popover" style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 6, width: 280, maxHeight: 240, overflowY: 'auto', padding: 4 }}>
-      {items.map((item) => (
-        <button key={item.id} className="menu-item" onClick={() => onSelect(item)}>
+    <div className="popover" style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 6, width: 280, maxHeight: 240, overflowY: 'auto', padding: 4, zIndex: 1100 }}>
+      {items.map((item, i) => (
+        <button key={item.id || i} className={'menu-item' + (i === selectedIndex ? ' is-active' : '')}
+          onMouseDown={(e) => { e.preventDefault(); onSelect(item) }}>
           {item.type === 'task' && <><Icon name="check" size={14} /><span style={{ flex: 1 }}>{item.title}</span>{item.due_date && <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{DateU.human(item.due_date)}</span>}</>}
           {item.type === 'project' && <><Icon name="hash" size={14} style={{ color: item.color }} />{item.name}</>}
           {item.type === 'date' && <><Icon name="calendar" size={14} />{item.name} <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{item.date}</span></>}
@@ -67,7 +68,7 @@ const SLASH_CMDS = [
   { cmd: '/compact', desc: '压缩对话上下文', icon: 'compress' },
   { cmd: '/summarize', desc: '总结当前项目进展', icon: 'doc' },
   { cmd: '/decompose', desc: '分解任务为子任务', icon: 'subtask' },
-  { cmd: '/schedule', desc: '帮我安排本周计划', icon: 'calendar' },
+  { cmd: '/schedule', desc: '安排本周计划', icon: 'calendar' },
 ]
 
 interface AIPanelProps {
@@ -91,16 +92,16 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
   const [refs, setRefs] = useState<{ type: string; id: string; name: string; date?: string }[]>([])
   const [mentionItems, setMentionItems] = useState<any[]>([])
   const [showSlash, setShowSlash] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const mentionAnchorRef = useRef<HTMLDivElement>(null)
-  const allTasks = useRef<Task[]>([])
-  const projects = useRef<Project[]>([])
+  const [allTasks, setAllTasks] = useState<Task[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
 
   // Load data
   useEffect(() => {
-    api.getProjects().then(ps => projects.current = ps)
-    api.getTasks().then(ts => allTasks.current = ts)
+    api.getProjects().then(setProjects)
+    api.getTasks().then(setAllTasks)
   }, [])
 
   useEffect(() => {
@@ -135,7 +136,6 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
     const v = e.target.value
     setVal(v)
 
-    // Slash command detection
     if (v === '/' || (v.startsWith('/') && !v.includes(' '))) {
       setShowSlash(true)
       setMention(null)
@@ -143,29 +143,24 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
       setShowSlash(false)
     }
 
-    // @ detection: look for @ at cursor position
     const pos = e.target.selectionStart
     const before = v.slice(0, pos)
     const atMatch = before.match(/@([^\s@]*)$/)
     if (atMatch) {
       const query = atMatch[1].toLowerCase()
       const atPos = pos - atMatch[0].length
-
-      // Search tasks
-      const tasks = allTasks.current.filter(t => !t.completed && !t.parent_id && t.title.toLowerCase().includes(query)).slice(0, 6)
+      const tasks = allTasks.filter(t => !t.completed && !t.parent_id && t.title.toLowerCase().includes(query)).slice(0, 6)
         .map(t => ({ type: 'task', id: t.id, title: t.title, due_date: t.due_date }))
-      // Search projects
-      const projs = projects.current.filter(p => p.name.toLowerCase().includes(query)).slice(0, 3)
+      const projs = projects.filter(p => p.name.toLowerCase().includes(query)).slice(0, 3)
         .map(p => ({ type: 'project', id: p.id, name: p.name, color: p.color }))
-      // Date presets
       const dates = [
         { type: 'date', id: 'today', name: '今天', date: DateU.today() },
         { type: 'date', id: 'tomorrow', name: '明天', date: DateU.addDays(DateU.today(), 1) },
         { type: 'date', id: 'next_week', name: '下周', date: DateU.addDays(DateU.today(), 7) },
       ].filter(d => d.name.includes(query || ''))
-
       setMention({ type: 'task', query, pos: atPos })
       setMentionItems([...tasks, ...projs, ...dates])
+      setSelectedIndex(0)
     } else {
       setMention(null)
       setMentionItems([])
@@ -196,12 +191,22 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
     const text = val.trim()
     if (!text || !convId || thinking) return
     setVal('')
+    setShowSlash(false)
 
     // Build ref context for AI
     let refContext = ''
     if (refs.length > 0) {
       refContext = '\n\n引用：' + refs.map(r => {
-        if (r.type === 'task') return `任务「${r.name}」(${r.id.slice(-6)})`
+        if (r.type === 'task') {
+          const t = allTasks.find(x => x.id === r.id)
+          if (t) return `任务「${t.title}」(${t.id.slice(-6)}) - 优先级P${t.priority}${t.due_date ? ' 截止'+t.due_date : ''}${t.description ? ' 描述:'+t.description : ''}`
+          return `任务「${r.name}」(${r.id.slice(-6)})`
+        }
+        if (r.type === 'project') {
+          const p = projects.find(x => x.id === r.id)
+          if (p) return `项目「${p.name}」`
+          return r.name
+        }
         if (r.type === 'date') return `日期 ${r.date}`
         return r.name
       }).join(', ')
@@ -238,11 +243,23 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
         body: JSON.stringify({ message: text + refContext, project_id: projectId, conv_id: convId }),
       })
 
+      if (!response.ok) {
+        const errBody = await response.text()
+        let errMsg = 'AI 服务错误'
+        try { errMsg = JSON.parse(errBody).error || errMsg } catch {}
+        setMessages(prev => prev.filter(m => m.id !== streamingId))
+        setMessages(prev => [...prev, { id: streamingId + '_err', role: 'assistant', content: `错误: ${errMsg}`, conversation_id: convId!, refs: '[]', proposals: null, proposals_applied: 0, created_at: '' }])
+        setThinking(false)
+        return
+      }
+
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       let buf = ''
       let fullContent = ''
+      let fullReasoning = ''
       let proposals: any = null
+      let currentEvent = ''
 
       if (reader) {
         while (true) {
@@ -253,17 +270,30 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
           buf = lines.pop()!
 
           for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim()
+              continue
+            }
             if (!line.startsWith('data: ')) continue
             try {
               const obj = JSON.parse(line.slice(6))
-              if (obj.content && !('proposals' in obj)) {
-                fullContent += obj.content
+              if (currentEvent === 'reasoning') {
+                fullReasoning += obj.reasoning_content || ''
+              } else if (currentEvent === 'delta') {
+                fullContent += obj.content || ''
                 setMessages(prev => prev.map(m => m.id === streamingId ? { ...m, content: fullContent } : m))
-              }
-              if ('proposals' in obj) {
+              } else if (currentEvent === 'error') {
+                setMessages(prev => prev.filter(m => m.id !== streamingId))
+                setMessages(prev => [...prev, { id: streamingId + '_err', role: 'assistant', content: `AI 错误: ${obj.error || '未知错误'}`, conversation_id: convId!, refs: '[]', proposals: null, proposals_applied: 0, created_at: '' }])
+                setThinking(false)
+                return
+              } else if (currentEvent === 'done') {
+                fullContent = obj.content || fullContent
                 proposals = obj.proposals
-                if (obj.content) fullContent = obj.content
+                fullReasoning = obj.reasoning_content || fullReasoning
               }
+              // reset event after processing data
+              if (currentEvent === 'done' || currentEvent === 'error') currentEvent = ''
             } catch {}
           }
         }
@@ -271,16 +301,17 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
 
       setMessages(prev => prev.filter(m => m.id !== streamingId))
 
-      let cleanContent = fullContent
-      if (proposals) {
-        cleanContent = fullContent.replace(/```proposals[\s\S]*?```/, '').trim()
+      // Don't save empty assistant messages
+      if (!fullContent.trim() && !proposals) {
+        setThinking(false)
+        return
       }
 
-      const saved = await api.addMessage(convId!, 'assistant', cleanContent, { proposals })
+      const saved = await api.addMessage(convId!, 'assistant', fullContent.trim() || '(empty)', { proposals })
 
       const allMsgs = await api.getMessages(convId!)
       if (allMsgs.length % 5 === 0 && allMsgs.length > 0) {
-        api.addMemory(projectId, `Chat summary (${allMsgs.length}): ${cleanContent.slice(0, 120)}`, 'ai')
+        api.addMemory(projectId, `Chat summary (${allMsgs.length}): ${fullContent.slice(0, 120)}`, 'ai')
       }
 
       setMessages(prev => [...prev.filter(m => m.id !== streamingId), saved])
@@ -293,19 +324,31 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
   }
 
   const applyProposals = async (proposals: any[], msgId: string) => {
+    let successCount = 0
+    const errors: string[] = []
     for (const p of proposals) {
-      if (p.op === 'create') {
-        await api.addTask({ title: p.title, project_id: projectId, due_date: p.due_date || null, due_time: p.due_time || null, priority: p.priority || 4, description: p.description || '', labels: '[]' } as any)
-      } else if (p.op === 'update' && p.task_id) {
-        await api.updateTask(p.task_id, p)
-      } else if (p.op === 'complete' && p.task_id) {
-        await api.toggleTask(p.task_id)
-      } else if (p.op === 'delete' && p.task_id) {
-        await api.deleteTask(p.task_id)
+      try {
+        if (p.op === 'create') {
+          await api.addTask({ title: p.title, project_id: projectId, due_date: p.due_date || null, due_time: p.due_time || null, priority: p.priority || 4, description: p.description || '', labels: [] } as any)
+        } else if (p.op === 'update' && p.task_id) {
+          await api.updateTask(p.task_id, p)
+        } else if (p.op === 'complete' && p.task_id) {
+          await api.toggleTask(p.task_id)
+        } else if (p.op === 'delete' && p.task_id) {
+          await api.deleteTask(p.task_id)
+        }
+        successCount++
+      } catch (err: any) {
+        errors.push(`${p.op || '操作'} "${p.title || p.task_id}": ${err.message}`)
       }
     }
     await api.updateMessage(msgId, { proposals_applied: 1 })
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, proposals_applied: 1 } : m))
+    // Show feedback message
+    const feedback = successCount > 0
+      ? `✓ 已应用 ${successCount} 条操作` + (errors.length > 0 ? `，${errors.length} 条失败` : '')
+      : `✗ 操作失败：${errors.join('; ')}`
+    await api.addMessage(convId!, 'system', feedback)
+    setMessages(prev => [...prev, { id: '_fb_' + Date.now(), role: 'system', content: feedback, conversation_id: convId!, refs: '[]', proposals: null, proposals_applied: 0, created_at: '' }])
   }
 
   /* ============ panel content ============ */
@@ -316,7 +359,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
         <Icon name="sparkle" size={16} style={{ color: 'var(--ai)' }} />
         <select value={projectId} onChange={(e) => setProjectId(e.target.value)}
           style={{ flex: 1, border: 'none', background: 'none', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', fontFamily: 'var(--font)' }}>
-          {projects.current.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <div style={{ display: 'flex', gap: 2 }}>
           {([['chat', '对话'], ['memory', '记忆'], ['agents', 'AGENTS']] as const).map(([t, l]) => (
@@ -364,7 +407,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
           </div>
 
           {/* Input area */}
-          <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--border-soft)', flexShrink: 0 }} ref={mentionAnchorRef}>
+          <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--border-soft)', flexShrink: 0 }}>
             {/* Mention pills */}
             {refs.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
@@ -379,7 +422,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
               </div>
             )}
             {/* Mention dropdown */}
-            {mention && mentionItems.length > 0 && <MentionMenu items={mentionItems} onSelect={insertMention} onClose={() => setMention(null)} />}
+            {mention && mentionItems.length > 0 && <MentionMenu items={mentionItems} onSelect={insertMention} selectedIndex={selectedIndex} />}
             {/* Slash commands */}
             {showSlash && (
               <div className="popover" style={{ position: 'absolute', bottom: '100%', left: 14, right: 14, marginBottom: 6, padding: 4 }}>
@@ -395,8 +438,21 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
               <div style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg-card)', padding: '8px 12px' }}>
                 <textarea ref={textareaRef} value={val} onChange={handleInput}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey && !mention) { e.preventDefault(); send() }
-                    if (e.key === 'Escape' && mention) { e.preventDefault(); setMention(null); setMentionItems([]) }
+                    if (mention && mentionItems.length > 0) {
+                      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, mentionItems.length - 1)) }
+                      else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
+                      else if (e.key === 'Enter') { e.preventDefault(); insertMention(mentionItems[selectedIndex]) }
+                      else if (e.key === 'Escape') { e.preventDefault(); setMention(null); setMentionItems([]) }
+                      return
+                    }
+                    if (showSlash) {
+                      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, SLASH_CMDS.length - 1)) }
+                      else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
+                      else if (e.key === 'Enter') { e.preventDefault(); const cmds = SLASH_CMDS.filter(c => c.cmd.includes(val.split(' ')[0])); if (cmds[selectedIndex]) execSlash(cmds[selectedIndex].cmd) }
+                      else if (e.key === 'Escape') { e.preventDefault(); setShowSlash(false) }
+                      return
+                    }
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
                   }}
                   placeholder="发消息… @ 引用任务，/ 查看命令"
                   rows={1} disabled={thinking}

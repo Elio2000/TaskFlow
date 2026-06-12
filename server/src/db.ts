@@ -134,5 +134,30 @@ export function initDB(): Database.Database {
     );
   `)
 
+  // Repair bad labels data
+  function repairLabels(value: string): string {
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed)) return JSON.stringify(parsed.filter((v: any) => typeof v === 'string'))
+      if (typeof parsed === 'string') {
+        const parsed2 = JSON.parse(parsed)
+        if (Array.isArray(parsed2)) return JSON.stringify(parsed2.filter((v: any) => typeof v === 'string'))
+      }
+    } catch {}
+    return '[]'
+  }
+
+  const tasks = db.prepare('SELECT id, labels FROM tasks').all() as any[]
+  const updateStmt = db.prepare('UPDATE tasks SET labels = ? WHERE id = ?')
+  for (const t of tasks) {
+    const fixed = repairLabels(t.labels)
+    if (fixed !== t.labels) {
+      updateStmt.run(fixed, t.id)
+    }
+  }
+
+  // Clean up empty assistant messages
+  db.prepare("DELETE FROM messages WHERE role = 'assistant' AND trim(content) = '' AND proposals IS NULL").run()
+
   return db
 }

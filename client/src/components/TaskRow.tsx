@@ -15,9 +15,13 @@ interface TaskRowProps {
   selectable?: boolean
   selected?: boolean
   onSelect?: (id: string) => void
+  draggable?: boolean
+  onDragStart?: (e: React.DragEvent) => void
+  onDragOver?: (e: React.DragEvent) => void
+  onDrop?: (e: React.DragEvent) => void
 }
 
-export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onToggle, selectable, selected, onSelect }: TaskRowProps) {
+export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onToggle, selectable, selected, onSelect, draggable, onDragStart, onDragOver, onDrop }: TaskRowProps) {
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
     await api.deleteTask(task.id)
@@ -27,8 +31,17 @@ export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onTog
   return (
     <div
       className={'task-row' + (task.completed ? ' is-done' : '')}
+      data-task-id={task.id}
+      draggable={draggable}
+      onDragStart={draggable ? onDragStart : undefined}
+      onDragOver={draggable ? onDragOver : undefined}
+      onDrop={draggable ? onDrop : undefined}
       onClick={() => onClick && onClick(task)}
     >
+      {draggable && (
+        <span style={{ cursor: 'grab', color: 'var(--text-tertiary)', fontSize: 13, lineHeight: 1, userSelect: 'none', flex: 'none', paddingTop: 2 }}
+          onMouseDown={e => e.stopPropagation()}>⠿</span>
+      )}
       {selectable && (
         <input type="checkbox" checked={selected || false} style={{ marginTop: 3, flex: 'none', accentColor: 'var(--accent)' }}
           onChange={() => onSelect?.(task.id)} onClick={e => e.stopPropagation()} />

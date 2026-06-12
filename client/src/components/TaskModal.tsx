@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { api } from '../api'
 import type { Task, Project, Section, Label } from '../api'
 import { DateU } from '../utils/date'
-import { Icon, PRIORITY_META } from '../icons'
+import { parseTaskLabels } from '../utils/labels'
 import { usePopover } from './Popover'
+import { Icon, PRIORITY_META } from '../icons'
 import { TaskCheckbox } from './TaskCheckbox'
 import { DateMenu } from './DateMenu'
 import { PriorityMenu } from './PriorityMenu'
@@ -19,14 +20,6 @@ const FIELD_LABELS: Record<string, string> = {
 interface TaskModalProps {
   taskId: string
   onClose: () => void
-}
-
-function parseLabels(raw: string): string[] {
-  try {
-    return JSON.parse(raw || '[]')
-  } catch {
-    return []
-  }
 }
 
 export function TaskModal({ taskId, onClose }: TaskModalProps) {
@@ -86,7 +79,7 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
 
   if (!task) return null
 
-  const taskLabelIds = parseLabels(task.labels)
+  const taskLabelIds = parseTaskLabels(task.labels)
   const pc = PRIORITY_META[task.priority]
 
   const save = (patch: Partial<Task>) => {
@@ -492,7 +485,7 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
                     const arr = taskLabelIds.includes(id)
                       ? taskLabelIds.filter((x) => x !== id)
                       : [...taskLabelIds, id]
-                    save({ labels: JSON.stringify(arr) })
+                    save({ labels: arr as any })
                   }}
                 />
               )}

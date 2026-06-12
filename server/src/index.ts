@@ -56,6 +56,16 @@ app.use('/api/cycles', cycleRoutes())
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 app.use(express.static(path.join(__dirname, '../../client/dist')))
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
+})
+
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n[ERROR] Port ${PORT} is already in use.`)
+    console.error(`Run: kill $(lsof -ti:${PORT})  then try again.\n`)
+    process.exit(1)
+  } else {
+    throw err
+  }
 })

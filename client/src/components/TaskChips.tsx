@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { api } from '../api'
 import type { Task, Label, Project, Section } from '../api'
 import { DateU } from '../utils/date'
+import { parseTaskLabels } from '../utils/labels'
 import { Icon } from '../icons'
 
 interface TaskChipsProps {
@@ -36,10 +37,7 @@ export function TaskChips({ task, showProject }: TaskChipsProps) {
     api.getTasks({ parent_id: task.id }).then(setSubtasks).catch(() => {})
   }, [task.id, task.project_id, task.section_id])
 
-  const taskLabelIds: string[] = (() => {
-    try { return JSON.parse(task.labels || '[]') }
-    catch { return [] }
-  })()
+  const taskLabelIds: string[] = parseTaskLabels(task.labels)
 
   const doneSubs = subtasks.filter((s) => s.completed).length
   const overdue = !task.completed && DateU.isOverdue(task.due_date)

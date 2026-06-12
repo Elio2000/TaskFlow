@@ -18,8 +18,11 @@ export function chatRoutes(): Router {
   router.post('/conversations', (req: Request, res: Response) => {
     const id = uid()
     const t = now()
+    const projectId = req.body.project_id || 'inbox'
+    // Verify project exists, fallback to inbox
+    const proj = req.db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId)
     req.db.prepare('INSERT INTO conversations VALUES (?,?,?,?,?,?)').run(
-      id, req.body.project_id, req.body.title || 'New Conversation', null, t, t
+      id, proj ? projectId : 'inbox', req.body.title || 'New Conversation', null, t, t
     )
     res.status(201).json(req.db.prepare('SELECT * FROM conversations WHERE id = ?').get(id))
   })

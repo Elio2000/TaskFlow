@@ -82,6 +82,7 @@ export function aiRoutes(): Router {
     res.setHeader('Connection', 'keep-alive')
 
     try {
+      const thinkingType = process.env.AI_PLANNER_THINKING === 'enabled' ? 'enabled' : 'disabled'
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -92,12 +93,15 @@ export function aiRoutes(): Router {
           model,
           messages,
           stream: true,
+          thinking: { type: thinkingType },
         }),
       })
 
       if (!response.ok) {
         const errText = await response.text()
-        res.write(`event: error\ndata: ${JSON.stringify({ error: `DeepSeek API error: ${response.status}` })}\n\n`)
+        let errMsg = `DeepSeek API error ${response.status}`
+        try { const j = JSON.parse(errText); errMsg = j.error?.message || errMsg } catch {}
+        res.write(`event: error\ndata: ${JSON.stringify({ error: errMsg })}\n\n`)
         res.end()
         return
       }
@@ -106,6 +110,7 @@ export function aiRoutes(): Router {
       const decoder = new TextDecoder()
       let buf = ''
       let fullContent = ''
+      let fullReasoning = ''
 
       while (true) {
         const { done, value } = await reader.read()
@@ -122,26 +127,32 @@ export function aiRoutes(): Router {
 
           try {
             const parsed = JSON.parse(data)
-            const delta = parsed.choices?.[0]?.delta?.content
-            if (delta) {
-              fullContent += delta
-              res.write(`event: delta\ndata: ${JSON.stringify({ content: delta })}\n\n`)
+            const delta = parsed.choices?.[0]?.delta
+            if (delta?.reasoning_content) {
+              fullReasoning += delta.reasoning_content
+              res.write(`event: reasoning\ndata: ${JSON.stringify({ reasoning_content: delta.reasoning_content })}\n\n`)
+            }
+            if (delta?.content) {
+              fullContent += delta.content
+              res.write(`event: delta\ndata: ${JSON.stringify({ content: delta.content })}\n\n`)
             }
           } catch {}
         }
       }
 
-      // Parse proposals from full content
+      // Parse proposals from fullContent only
       let proposals = null
+      let cleanContent = fullContent
       const propMatch = fullContent.match(/```proposals\s*([\s\S]*?)```/)
       if (propMatch) {
         try { proposals = JSON.parse(propMatch[1]) } catch {}
+        cleanContent = fullContent.replace(/```proposals[\s\S]*?```/, '').trim()
       }
 
-      res.write(`event: done\ndata: ${JSON.stringify({ content: fullContent, proposals })}\n\n`)
+      res.write(`event: done\ndata: ${JSON.stringify({ content: cleanContent, reasoning_content: fullReasoning, proposals })}\n\n`)
       res.end()
     } catch (err: any) {
-      res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`)
+      res.write(`event: error\ndata: ${JSON.stringify({ error: err.message || 'Unknown error' })}\n\n`)
       res.end()
     }
   })

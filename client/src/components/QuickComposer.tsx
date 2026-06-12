@@ -12,6 +12,8 @@ interface QuickComposerProps {
   placeholder?: string
   autoFocus?: boolean
   defaultDueDate?: string
+  collapsed?: boolean
+  collapsedLabel?: string
 }
 
 const REPEAT_LABELS: Record<string, string> = {
@@ -20,12 +22,14 @@ const REPEAT_LABELS: Record<string, string> = {
   monthly: '每月',
 }
 
-export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoFocus, defaultDueDate }: QuickComposerProps) {
+export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoFocus, defaultDueDate, collapsed, collapsedLabel }: QuickComposerProps) {
   const [text, setText] = useState('')
   const [parsed, setParsed] = useState<ReturnType<typeof parse> | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [labels, setLabels] = useState<Label[]>([])
   const [loading, setLoading] = useState(false)
+  const [expanded, setExpanded] = useState(!collapsed)
+  const [showConfirm, setShowConfirm] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -45,11 +49,23 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
     if (!parsed || !parsed.title) return
     setLoading(true)
     try {
+      // Resolve label names to IDs
+      const allLabels = await api.getLabels()
+      const labelIds: string[] = []
+      for (const name of (parsed.label_ids || [])) {
+        let lbl = allLabels.find(l => l.name === name)
+        if (!lbl) {
+          const colors = ['#c25e4c','#c98a2e','#5b7fa6','#7a9461','#8a6fa8']
+          lbl = await api.addLabel(name, colors[Math.floor(Math.random() * colors.length)])
+        }
+        labelIds.push(lbl.id)
+      }
+
       const body: Record<string, any> = {
         title: parsed.title,
         project_id: parsed.project_id || projectId || 'inbox',
         priority: parsed.priority || 4,
-        labels: parsed.label_ids || [],
+        labels: labelIds,
       }
       if (sectionId) body.section_id = sectionId
       if (parsed.due_date) body.due_date = parsed.due_date
@@ -59,6 +75,7 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
 
       const task = await api.addTask(body as any)
       setText('')
+      setExpanded(false)
       if (onDone) onDone(task)
     } catch (err) {
       console.error('Failed to add task:', err)
@@ -111,8 +128,41 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
     })
   }
 
+  const handleCancel = () => {
+    if (text.trim() || (parsed && parsed.title)) {
+      setShowConfirm(true)
+    } else {
+      setText(''); setExpanded(false)
+    }
+  }
+
+  const handleDiscard = () => {
+    setText(''); setExpanded(false); setShowConfirm(false)
+  }
+
+  if (!expanded && collapsed) {
+    return (
+      <button className="btn-ghost" style={{ justifyContent: 'flex-start', color: 'var(--text-secondary)', fontSize: 13, width: '100%', marginBottom: 12 }}
+        onClick={() => setExpanded(true)}>
+        <Icon name="plus" size={14} style={{ color: 'var(--accent)' }} /> {collapsedLabel || '添加任务'}
+      </button>
+    )
+  }
+
   return (
     <div className="composer" style={{ margin: '0 0 16px' }}>
+      {showConfirm && (
+        <div className="modal-scrim" style={{ zIndex: 1000 }} onClick={e => { if (e.target === e.currentTarget) setShowConfirm(false) }}>
+          <div className="modal-card" style={{ maxWidth: 320, marginTop: '20vh', padding: 20 }}>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>放弃未保存的修改？</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>您输入的内容将不会被保存。</div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn-ghost" onClick={() => setShowConfirm(false)}>取消</button>
+              <button className="btn-primary" style={{ background: 'var(--p1)' }} onClick={handleDiscard}>放弃</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 10px 8px 12px' }}>
         <Icon name="plus" size={16} style={{ color: 'var(--text-tertiary)', flex: 'none' }} />
         <input
@@ -131,8 +181,7 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
               }
             }
             if (e.key === 'Escape') {
-              setText('')
-              if (onDone) onDone(undefined)
+              handleCancel()
             }
           }}
           placeholder={placeholder || '添加任务… 试试「明天下午3点 #论文写作 p2」'}

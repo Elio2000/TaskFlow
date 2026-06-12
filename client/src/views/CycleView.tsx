@@ -13,6 +13,9 @@ export function CycleView({ cycleId }: { cycleId: string }) {
   const [taskModal, setTaskModal] = useState<string | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiTask, setAiTask] = useState<Task | null>(null)
+  const [showPicker, setShowPicker] = useState(false)
+  const [allTasks, setAllTasks] = useState<Task[]>([])
+  const [searchQ, setSearchQ] = useState('')
 
   const fetch = async () => {
     const cs = await api.getCycles()
@@ -45,7 +48,35 @@ export function CycleView({ cycleId }: { cycleId: string }) {
               )}
             </div>
           </div>
+          <button className="btn-ghost" style={{ fontSize: 13 }} onClick={async () => {
+            const ts = await api.getTasks()
+            setAllTasks(ts.filter((t: Task) => !t.completed && !t.parent_id))
+            setShowPicker(true)
+          }}><Icon name="plus" size={14} /> 添加已有任务</button>
         </div>
+        {/* Task picker modal */}
+        {showPicker && (
+          <div className="modal-scrim" onClick={e => { if (e.target === e.currentTarget) setShowPicker(false) }}>
+            <div className="modal-card" style={{ maxWidth: 480, marginTop: '10vh', maxHeight: '60vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+              <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input autoFocus value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="搜索任务…"
+                  style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, background: 'none', color: 'var(--text-primary)' }} />
+                <button className="btn-icon" onClick={() => setShowPicker(false)}><Icon name="x" size={16} /></button>
+              </div>
+              <div style={{ padding: 8 }}>
+                {allTasks.filter(t => t.title.toLowerCase().includes(searchQ.toLowerCase()) && !tasks.find(ct => ct.id === t.id)).slice(0, 20).map(t => (
+                  <button key={t.id} className="menu-item" style={{ width: '100%' }} onClick={async () => {
+                    await api.addTaskToCycle(cycleId, t.id)
+                    setShowPicker(false); setSearchQ(''); fetch()
+                  }}>
+                    <span style={{ flex: 1, fontSize: 13.5 }}>{t.title}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>+ 加入冲刺</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         {/* Progress bar */}
         <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ flex: 1, height: 6, background: 'var(--bg-inset)', borderRadius: 3, overflow: 'hidden' }}>

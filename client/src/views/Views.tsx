@@ -6,10 +6,27 @@ import { Icon } from '../icons'
 import { TaskRow } from '../components/TaskRow'
 import { TaskCheckbox } from '../components/TaskCheckbox'
 import { TaskChips } from '../components/TaskChips'
+import { parseTaskLabels } from '../utils/labels'
 import { TaskModal } from '../components/TaskModal'
 import { QuickComposer } from '../components/QuickComposer'
 import { AIPanel } from '../ai/AIPanel'
 import { BulkActionBar } from '../components/BulkActionBar'
+import { DisplayMenu, type DisplayFilters } from '../components/DisplayMenu'
+
+function applyFilters(tasks: Task[], filters: DisplayFilters): Task[] {
+  return tasks.filter(t => {
+    if (!filters.completed && t.completed) return false
+    if (filters.priority && t.priority !== filters.priority) return false
+    if (filters.labels.length > 0) {
+      try {
+        const ids: string[] = JSON.parse(t.labels || '[]')
+        if (!filters.labels.some(l => ids.includes(l))) return false
+      } catch { return false }
+    }
+    return true
+  })
+}
+
 export { CalendarView } from './CalendarView'
 
 /* ====================================================
@@ -71,19 +88,78 @@ export function InboxView() {
   const [aiOpen, setAiOpen] = useState(false)
   const [aiTask, setAiTask] = useState<Task | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
+  const [filters, setFilters] = useState<DisplayFilters>({ labels: [], priority: null, completed: false, sort: 'manual' })
   const fetch = () => api.getTasks({ project_id: 'inbox', completed: '0' }).then(setTasks)
   useEffect(() => { fetch(); const id = setInterval(fetch, 5000); return () => clearInterval(id) }, [])
   const toggleSelect = (id: string) => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  // Drag state for list reorder
+  const dragTaskId = useRef<string | null>(null)
+
+  const handleListDrop = async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault()
+    const tid = dragTaskId.current
+    if (!tid || tid === targetId) return
+    const targetIdx = filteredTasks.findIndex(t => t.id === targetId)
+    const sourceTask = filteredTasks.find(t => t.id === tid)
+    if (!sourceTask) return
+    // Calculate new sort_order: place before target
+    const prevTask = targetIdx > 0 ? filteredTasks[targetIdx - 1] : null
+    const targetTask = filteredTasks[targetIdx]
+    let newOrder: number
+    if (!prevTask) newOrder = targetTask.sort_order - 1
+    else newOrder = (prevTask.sort_order + targetTask.sort_order) / 2
+    await api.updateTask(tid, { sort_order: newOrder } as any)
+    dragTaskId.current = null
+    fetch()
+  }
+
+  // Apply filters
+  const filteredTasks = tasks.filter(t => {
+    if (!filters.completed && t.completed) return false
+    if (filters.priority && t.priority !== filters.priority) return false
+    if (filters.labels.length > 0) {
+      try {
+        const ids: string[] = JSON.parse(t.labels || '[]')
+        if (!filters.labels.some(l => ids.includes(l))) return false
+      } catch { return false }
+    }
+    return true
+  })
+
   return (
-    <ViewShell title="收件箱" subtitle={tasks.length ? tasks.length + ' 条任务' : '干净如新'}>
-      <QuickComposer projectId="inbox" placeholder="添加到收件箱… 试试「明天 p2 整理文件」" onDone={fetch} />
-      {tasks.length === 0
-        ? <EmptyState icon="inbox" text="收件箱已清空" sub="处理完所有任务，真不错！" />
-        : tasks.map((t) => <TaskRow key={t.id} task={t} selectable selected={selectedIds.has(t.id)} onSelect={toggleSelect} onClick={() => setTaskModal(t.id)} onAIClick={(task) => { setAiTask(task); setAiOpen(true) }} onDelete={fetch} onToggle={fetch} />)
-      }
+    <ViewShell title="收件箱" subtitle={filteredTasks.length ? filteredTasks.length + ' 条任务' : '干净如新'}
+      actions={
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 2, background: 'var(--bg-inset)', borderRadius: 8, padding: 3 }}>
+            <button className={viewMode === 'list' ? 'btn-primary' : 'btn-ghost'} style={{ fontSize: 12, padding: '3px 8px' }}
+              onClick={() => setViewMode('list')}><Icon name="list" size={13} /> 列表</button>
+            <button className={viewMode === 'board' ? 'btn-primary' : 'btn-ghost'} style={{ fontSize: 12, padding: '3px 8px' }}
+              onClick={() => setViewMode('board')}><Icon name="board" size={13} /> 看板</button>
+          </div>
+          <DisplayMenu filters={filters} onChange={setFilters} />
+        </div>
+      }>
+      {viewMode === 'board' ? (
+        <BoardView projectId="inbox" />
+      ) : (
+        <>
+          <QuickComposer projectId="inbox" placeholder="添加到收件箱… 试试「明天 p2 整理文件」" onDone={fetch} />
+          {filteredTasks.length === 0
+            ? <EmptyState icon="inbox" text="收件箱已清空" sub="处理完所有任务，真不错！" />
+            : filteredTasks.map((t) => <TaskRow key={t.id} task={t} selectable selected={selectedIds.has(t.id)} onSelect={toggleSelect}
+                draggable
+                onDragStart={() => { dragTaskId.current = t.id }}
+                onDragOver={(e) => { e.preventDefault() }}
+                onDrop={(e) => { handleListDrop(e, t.id) }}
+                onClick={() => setTaskModal(t.id)} onAIClick={(task) => { setAiTask(task); setAiOpen(true) }} onDelete={fetch} onToggle={fetch} />)
+          }
+        </>
+      )}
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
       {aiOpen && <AIPanel projectId={aiTask?.project_id || 'inbox'} refTask={aiTask} layout="float" onClose={() => setAiOpen(false)} />}
-      {selectedIds.size > 0 && (
+      {selectedIds.size > 0 && viewMode === 'list' && (
         <BulkActionBar ids={[...selectedIds]} onDone={() => { setSelectedIds(new Set()); fetch() }} onClear={() => setSelectedIds(new Set())} />
       )}
     </ViewShell>
@@ -98,17 +174,20 @@ export function TodayView() {
   const [taskModal, setTaskModal] = useState<string | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiTask, setAiTask] = useState<Task | null>(null)
+  const [filters, setFilters] = useState<DisplayFilters>({ labels: [], priority: null, completed: false, sort: 'manual' })
   const fetch = () => api.getTasks().then(setTasks)
   useEffect(() => { fetch(); const id = setInterval(fetch, 5000); return () => clearInterval(id) }, [])
+  const filtered = applyFilters(tasks, filters)
   const today = DateU.today()
-  const todayTasks = tasks.filter(t => t.due_date === today && !t.completed && !t.parent_id)
-  const overdue = tasks.filter(t => !t.completed && !t.parent_id && t.due_date && t.due_date < today)
-  const done = tasks.filter(t => t.completed && t.due_date === today)
+  const todayTasks = filtered.filter(t => t.due_date === today && !t.completed && !t.parent_id)
+  const overdue = filtered.filter(t => !t.completed && !t.parent_id && t.due_date && t.due_date < today)
+  const done = filtered.filter(t => t.completed && t.due_date === today)
   const openTask = (t: Task) => setTaskModal(t.id)
   const openAI = (t: Task) => { setAiTask(t); setAiOpen(true) }
   return (
-    <ViewShell title="今天" subtitle={new Date().toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' })}>
-      <QuickComposer projectId="inbox" placeholder="添加今天的任务…" onDone={fetch} />
+    <ViewShell title="今天" subtitle={new Date().toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' })}
+      actions={<DisplayMenu filters={filters} onChange={setFilters} />}>
+      <QuickComposer projectId="inbox" defaultDueDate={DateU.today()} placeholder="添加今天的任务…" onDone={fetch} />
       {overdue.length > 0 && <TaskGroup title="逾期" tasks={overdue} showProject onOpenTask={openTask} onAIClick={openAI} onDelete={fetch} onToggle={fetch} accent="var(--p1)" />}
       {todayTasks.length > 0
         ? <TaskGroup title="今天" tasks={todayTasks} showProject onOpenTask={openTask} onAIClick={openAI} onDelete={fetch} onToggle={fetch} />
@@ -197,7 +276,7 @@ function BoardCard({ task, sectionId, onOpenTask, dragRef, handleDownRef, onRefr
         onMouseDown={(e) => e.stopPropagation()}>
         <TaskCheckbox task={task} onToggle={onRefresh} />
       </div>
-      <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: (task.labels ? JSON.parse(task.labels).length : 0) || task.due_date ? 8 : 0, lineHeight: 1.45 }}>{task.title}</div>
+      <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: parseTaskLabels(task.labels).length || task.due_date ? 8 : 0, lineHeight: 1.45 }}>{task.title}</div>
       <TaskChips task={task} />
     </div>
   )
@@ -273,7 +352,7 @@ function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh, dragRef, h
   )
 }
 
-export function BoardView({ projectId }: { projectId: string }) {
+function BoardView({ projectId }: { projectId: string }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [project, setProject] = useState<Project | null>(null)
   const [sections, setSections] = useState<Section[]>([])
@@ -293,6 +372,8 @@ export function BoardView({ projectId }: { projectId: string }) {
   useEffect(() => { fetch(); const id = setInterval(fetch, 5000); return () => clearInterval(id) }, [projectId])
 
   const unsectioned = tasks.filter(t => !t.section_id && !t.parent_id && !t.completed)
+  const doneTasks = tasks.filter(t => t.completed && !t.parent_id)
+  const [showDone, setShowDone] = useState(false)
 
   if (!project) return <ViewShell title="加载中..."><div /></ViewShell>
 
@@ -313,74 +394,23 @@ export function BoardView({ projectId }: { projectId: string }) {
             placeholder="+ 新建分区"
             style={{ width: '100%', border: '1.5px dashed var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 13.5, background: 'transparent', color: 'var(--text-secondary)', outline: 'none' }} />
         </div>
-      </div>
-      {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
-    </ViewShell>
-  )
-}
-
-/* ====================================================
-   ListView — 列表视图
-   ==================================================== */
-export function ListView({ projectId }: { projectId: string }) {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [project, setProject] = useState<Project | null>(null)
-  const [sections, setSections] = useState<Section[]>([])
-  const [newSec, setNewSec] = useState(false)
-  const [newSecName, setNewSecName] = useState('')
-  const [taskModal, setTaskModal] = useState<string | null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [aiTask, setAiTask] = useState<Task | null>(null)
-
-  const fetch = async () => {
-    const [p, secs, ts] = await Promise.all([
-      api.getProject(projectId),
-      api.getSections(projectId),
-      api.getTasks({ project_id: projectId }),
-    ])
-    setProject(p); setSections(secs); setTasks(ts)
-  }
-  useEffect(() => { fetch(); const id = setInterval(fetch, 5000); return () => clearInterval(id) }, [projectId])
-
-  const unsectioned = tasks.filter(t => !t.section_id && !t.parent_id && !t.completed)
-  const openTask = (t: Task) => setTaskModal(t.id)
-  const openAI = (t: Task) => { setAiTask(t); setAiOpen(true) }
-
-  if (!project) return <ViewShell title="加载中..."><div /></ViewShell>
-
-  return (
-    <ViewShell title={project.name} subtitle="列表视图">
-      <QuickComposer projectId={projectId} onDone={fetch} />
-      {unsectioned.map((t) => <TaskRow key={t.id} task={t} onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)}
-      {sections.map((s) => {
-        const ts = tasks.filter(t => t.project_id === projectId && t.section_id === s.id && !t.parent_id && !t.completed)
-        return (
-          <div key={s.id} style={{ marginTop: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid var(--border)', paddingBottom: 5, marginBottom: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', flex: 1 }}>{s.name}</span>
-              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{ts.length}</span>
-              <button className="btn-icon" style={{ width: 24, height: 24 }} onClick={async () => { await api.deleteSection(s.id); fetch() }}><Icon name="trash" size={12} /></button>
-            </div>
-            {ts.map((t) => <TaskRow key={t.id} task={t} onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)}
-            <QuickComposer projectId={projectId} sectionId={s.id} autoFocus={false} onDone={fetch} />
+        {/* Done column */}
+        {doneTasks.length > 0 && (
+          <div className="board-col" style={{ opacity: 0.7 }}>
+            <button onClick={() => setShowDone(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: showDone ? 8 : 0, padding: '2px 0', background: 'none', border: 'none', cursor: 'pointer', width: '100%' }}>
+              <Icon name={showDone ? 'chevronDown' : 'chevronRight'} size={13} style={{ color: 'var(--text-tertiary)' }} />
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-tertiary)', flex: 1 }}>已完成</span>
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{doneTasks.length}</span>
+            </button>
+            {showDone && doneTasks.map(t => (
+              <div key={t.id} className="board-card" style={{ marginBottom: 7, opacity: 0.6 }} onClick={() => setTaskModal(t.id)}>
+                <div style={{ fontSize: 13.5, fontWeight: 500, textDecoration: 'line-through', lineHeight: 1.45 }}>{t.title}</div>
+              </div>
+            ))}
           </div>
-        )
-      })}
-      <div style={{ marginTop: 16 }}>
-        {newSec ? (
-          <input autoFocus value={newSecName} onChange={(e) => setNewSecName(e.target.value)}
-            onKeyDown={async (e) => { if (e.key === 'Enter' && newSecName.trim()) { await api.addSection(projectId, newSecName.trim()); setNewSecName(''); setNewSec(false); fetch() } if (e.key === 'Escape') { setNewSec(false); setNewSecName('') } }}
-            onBlur={async () => { if (newSecName.trim()) { await api.addSection(projectId, newSecName.trim()); fetch() } setNewSec(false); setNewSecName('') }}
-            placeholder="分区名称…"
-            style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 13.5, background: 'var(--bg-content)', color: 'var(--text-primary)', outline: 'none', width: '100%' }} />
-        ) : (
-          <button className="btn-ghost" style={{ color: 'var(--text-tertiary)' }} onClick={() => setNewSec(true)}>
-            <Icon name="plus" size={14} /> 添加分区
-          </button>
         )}
       </div>
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
-      {aiOpen && <AIPanel projectId={aiTask?.project_id || projectId} refTask={aiTask} layout="float" onClose={() => setAiOpen(false)} />}
     </ViewShell>
   )
 }
