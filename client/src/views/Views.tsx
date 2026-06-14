@@ -7,6 +7,7 @@ import { TaskRow } from '../components/TaskRow'
 import { TaskCheckbox } from '../components/TaskCheckbox'
 import { TaskChips } from '../components/TaskChips'
 import { parseTaskLabels } from '../utils/labels'
+import { dragSource, draggedTaskId, noDrag } from '../utils/drag'
 import { TaskModal } from '../components/TaskModal'
 import { QuickComposer } from '../components/QuickComposer'
 import { AIPanel } from '../ai/AIPanel'
@@ -94,24 +95,17 @@ export function InboxView() {
   useEffect(() => { fetch(); const id = setInterval(fetch, 5000); return () => clearInterval(id) }, [])
   const toggleSelect = (id: string) => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  // Drag state for list reorder
-  const dragTaskId = useRef<string | null>(null)
-
-  const handleListDrop = async (e: React.DragEvent, targetId: string) => {
-    e.preventDefault()
-    const tid = dragTaskId.current
-    if (!tid || tid === targetId) return
-    const targetIdx = filteredTasks.findIndex(t => t.id === targetId)
-    const sourceTask = filteredTasks.find(t => t.id === tid)
-    if (!sourceTask) return
-    // Calculate new sort_order: place before target
-    const prevTask = targetIdx > 0 ? filteredTasks[targetIdx - 1] : null
-    const targetTask = filteredTasks[targetIdx]
-    let newOrder: number
-    if (!prevTask) newOrder = targetTask.sort_order - 1
-    else newOrder = (prevTask.sort_order + targetTask.sort_order) / 2
-    await api.updateTask(tid, { sort_order: newOrder } as any)
-    dragTaskId.current = null
+  // List reorder via unified drag util (task id travels in dataTransfer).
+  // Renumber the whole list so reordering is stable even when many tasks share
+  // the default sort_order (midpoint math alone would be a no-op then).
+  const handleListMove = async (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return
+    const dragged = filteredTasks.find(t => t.id === draggedId)
+    const ordered = filteredTasks.filter(t => t.id !== draggedId)
+    const ti = ordered.findIndex(t => t.id === targetId)
+    if (ti < 0 || !dragged) return
+    ordered.splice(ti, 0, dragged)
+    await Promise.all(ordered.map((t, i) => t.sort_order === i ? Promise.resolve(undefined as any) : api.updateTask(t.id, { sort_order: i } as any)))
     fetch()
   }
 
@@ -150,9 +144,7 @@ export function InboxView() {
             ? <EmptyState icon="inbox" text="收件箱已清空" sub="处理完所有任务，真不错！" />
             : filteredTasks.map((t) => <TaskRow key={t.id} task={t} selectable selected={selectedIds.has(t.id)} onSelect={toggleSelect}
                 draggable
-                onDragStart={() => { dragTaskId.current = t.id }}
-                onDragOver={(e) => { e.preventDefault() }}
-                onDrop={(e) => { handleListDrop(e, t.id) }}
+                onMoveTo={(draggedId) => handleListMove(draggedId, t.id)}
                 onClick={() => setTaskModal(t.id)} onAIClick={(task) => { setAiTask(task); setAiOpen(true) }} onDelete={fetch} onToggle={fetch} />)
           }
         </>
@@ -209,8 +201,14 @@ export function UpcomingView() {
   const [taskModal, setTaskModal] = useState<string | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiTask, setAiTask] = useState<Task | null>(null)
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null)
   const fetch = () => api.getTasks().then(setTasks)
   useEffect(() => { fetch(); const id = setInterval(fetch, 5000); return () => clearInterval(id) }, [])
+  // Cross-day drag: dropping a task onto a day sets its due_date (due_time preserved)
+  const handleDayDrop = async (draggedId: string, date: string) => {
+    await api.updateTask(draggedId, { due_date: date } as any)
+    fetch()
+  }
   const days = Array.from({ length: 14 }, (_, i) => {
     const d = new Date(baseDate); d.setDate(d.getDate() + i)
     const ds = DateU.fmt(d)
@@ -226,14 +224,17 @@ export function UpcomingView() {
         <button className="btn-ghost" onClick={() => { const d = new Date(baseDate); d.setDate(d.getDate() + 7); setBaseDate(d) }}><Icon name="chevronRight" size={15} /></button>
       </span>}>
       {days.map((day) => (
-        <div key={day.date} style={{ marginBottom: 24 }}>
+        <div key={day.date} style={{ marginBottom: 24, borderRadius: 8, background: dragOverDate === day.date ? 'var(--bg-hover)' : undefined, transition: 'background .12s' }}
+          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverDate(day.date) }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverDate(d => d === day.date ? null : d) }}
+          onDrop={(e) => { e.preventDefault(); setDragOverDate(null); const id = draggedTaskId(e); if (id) handleDayDrop(id, day.date) }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8, borderBottom: '1px solid var(--border-soft)', paddingBottom: 6 }}>
             <span style={{ fontSize: 16, fontWeight: 700, color: day.date === DateU.today() ? 'var(--accent-text)' : 'var(--text-primary)' }}>{day.label}</span>
             <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>{day.weekday} · {day.date}</span>
           </div>
           {day.dayTasks.length === 0
             ? <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', padding: '4px 0 4px 4px' }}>暂无任务</div>
-            : day.dayTasks.map((t) => <TaskRow key={t.id} task={t} showProject onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)
+            : day.dayTasks.map((t) => <TaskRow key={t.id} task={t} draggable showProject onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)
           }
           <QuickComposer projectId="inbox" defaultDueDate={day.date} placeholder="+ 为这天添加任务" autoFocus={false} onDone={fetch} />
         </div>
@@ -247,33 +248,19 @@ export function UpcomingView() {
 /* ====================================================
    BoardView — 看板视图 (P1-005: useRef instead of module vars)
    ====================================================
-   Drag state is passed via a shared ref from BoardView through BoardCol to BoardCard.
-   Using React refs instead of module-level variables eliminates race conditions.
+   Drag uses the shared util (utils/drag): the whole card is the drag source and
+   the task id travels via dataTransfer, so drops also work across other views.
    ==================================================== */
-type DragState = { taskId: string | null; fromSection: string | null }
-
-function BoardCard({ task, sectionId, onOpenTask, dragRef, handleDownRef, onRefresh }: {
-  task: Task; sectionId: string | null; onOpenTask: (t: Task) => void;
-  dragRef: React.MutableRefObject<DragState>; handleDownRef: React.MutableRefObject<boolean>;
-  onRefresh: () => void;
+function BoardCard({ task, onOpenTask, onRefresh }: {
+  task: Task; onOpenTask: (t: Task) => void; onRefresh: () => void;
 }) {
   return (
-    <div data-task-id={task.id} className="board-card" draggable
-      onDragStart={(e) => {
-        if (!handleDownRef.current) { e.preventDefault(); return }
-        dragRef.current.taskId = task.id; dragRef.current.fromSection = sectionId
-        e.dataTransfer.effectAllowed = 'move'
-        setTimeout(() => { (e.target as HTMLElement).style.opacity = '0.4' }, 0)
-      }}
-      onDragEnd={(e) => { handleDownRef.current = false; dragRef.current.taskId = null; (e.target as HTMLElement).style.opacity = '1' }}
+    <div data-task-id={task.id} className="board-card" {...dragSource(task.id)}
       onClick={() => onOpenTask(task)}
       style={{ position: 'relative', paddingLeft: 44 }}>
       <span className="board-drag-handle"
-        onMouseDown={(e) => { e.stopPropagation(); handleDownRef.current = true }}
-        onMouseUp={() => { handleDownRef.current = false }}
         style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', cursor: 'grab', fontSize: 13, lineHeight: 1, color: 'transparent', userSelect: 'none', transition: 'color .12s' }}>⠿</span>
-      <div style={{ position: 'absolute', left: 22, top: '50%', transform: 'translateY(-50%)' }}
-        onMouseDown={(e) => e.stopPropagation()}>
+      <div style={{ position: 'absolute', left: 22, top: '50%', transform: 'translateY(-50%)' }} {...noDrag}>
         <TaskCheckbox task={task} onToggle={onRefresh} />
       </div>
       <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: parseTaskLabels(task.labels).length || task.due_date ? 8 : 0, lineHeight: 1.45 }}>{task.title}</div>
@@ -282,10 +269,9 @@ function BoardCard({ task, sectionId, onOpenTask, dragRef, handleDownRef, onRefr
   )
 }
 
-function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh, dragRef, handleDownRef }: {
+function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh }: {
   section: Section | null; tasks: Task[]; onOpenTask: (t: Task) => void;
   projectId: string; onRefresh: () => void;
-  dragRef: React.MutableRefObject<DragState>; handleDownRef: React.MutableRefObject<boolean>;
 }) {
   const [addingCard, setAddingCard] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -310,7 +296,7 @@ function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh, dragRef, h
       onDragLeave={(e) => { if (!colRef.current?.contains(e.relatedTarget as Node)) { setDragOver(false); setInsertBefore(null) } }}
       onDrop={async (e) => {
         e.preventDefault(); setDragOver(false); setInsertBefore(null)
-        const taskId = dragRef.current.taskId; if (!taskId) return
+        const taskId = draggedTaskId(e); if (!taskId) return
         const newSectionId = section ? section.id : null
         const tasksInCol = tasks.filter(t => t.id !== taskId)
         let newOrder: number
@@ -338,7 +324,7 @@ function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh, dragRef, h
         {tasks.map((t) => (
           <div key={t.id}>
             {insertBefore === t.id && dragOver && <div style={{ height: 2, borderRadius: 2, background: 'var(--accent)', margin: '0 4px' }} />}
-            <BoardCard task={t} sectionId={sectionId} onOpenTask={onOpenTask} dragRef={dragRef} handleDownRef={handleDownRef} onRefresh={onRefresh} />
+            <BoardCard task={t} onOpenTask={onOpenTask} onRefresh={onRefresh} />
           </div>
         ))}
         {insertBefore === 'end' && dragOver && <div style={{ height: 2, borderRadius: 2, background: 'var(--accent)', margin: '0 4px' }} />}
@@ -358,8 +344,6 @@ function BoardView({ projectId }: { projectId: string }) {
   const [sections, setSections] = useState<Section[]>([])
   const [newColName, setNewColName] = useState('')
   const [taskModal, setTaskModal] = useState<string | null>(null)
-  const boardDrag = useRef<DragState>({ taskId: null, fromSection: null })
-  const boardHandleDown = useRef(false)
 
   const fetch = async () => {
     const [p, secs, ts] = await Promise.all([
@@ -382,11 +366,11 @@ function BoardView({ projectId }: { projectId: string }) {
       <QuickComposer projectId={projectId} onDone={fetch} />
       <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 16, alignItems: 'flex-start' }}>
         {unsectioned.length > 0 && (
-          <BoardCol section={null} tasks={unsectioned} onOpenTask={(t) => setTaskModal(t.id)} projectId={projectId} onRefresh={fetch} dragRef={boardDrag} handleDownRef={boardHandleDown} />
+          <BoardCol section={null} tasks={unsectioned} onOpenTask={(t) => setTaskModal(t.id)} projectId={projectId} onRefresh={fetch} />
         )}
         {sections.map((s) => {
           const ts = tasks.filter(t => t.project_id === projectId && t.section_id === s.id && !t.parent_id && !t.completed)
-          return <BoardCol key={s.id} section={s} tasks={ts} onOpenTask={(t) => setTaskModal(t.id)} projectId={projectId} onRefresh={fetch} dragRef={boardDrag} handleDownRef={boardHandleDown} />
+          return <BoardCol key={s.id} section={s} tasks={ts} onOpenTask={(t) => setTaskModal(t.id)} projectId={projectId} onRefresh={fetch} />
         })}
         <div style={{ width: 260, flex: 'none' }}>
           <input value={newColName} onChange={(e) => setNewColName(e.target.value)}

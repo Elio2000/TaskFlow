@@ -50,13 +50,23 @@ export function taskRoutes(): Router {
     const t = now()
     const body = req.body
 
+    // Default sort_order = end of this project/section so new tasks get a unique
+    // increasing order. A shared 1e6 default makes midpoint drag-reorder a no-op.
+    let sortOrder = body.sort_order
+    if (sortOrder == null) {
+      const row = req.db.prepare(
+        "SELECT MAX(sort_order) as m FROM tasks WHERE project_id = ? AND IFNULL(section_id,'') = IFNULL(?,'')"
+      ).get(body.project_id || 'inbox', body.section_id || null) as any
+      sortOrder = (row?.m ?? 0) + 1
+    }
+
     req.db.prepare(`INSERT INTO tasks (id,project_id,section_id,parent_id,title,description,start_date,due_date,due_time,end_time,repeat,priority,labels,reminder,completed,completed_at,sort_order,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       id, body.project_id || 'inbox', body.section_id || null, body.parent_id || null,
       body.title || '', body.description || '', body.start_date || null, body.due_date || null,
       body.due_time || null, body.end_time || null, body.repeat || null, body.priority ?? 4,
       normalizeLabels(body.labels),
-      body.reminder || null, body.completed ?? 0, null, body.sort_order ?? 1e6, t, t
+      body.reminder || null, body.completed ?? 0, null, sortOrder, t, t
     )
 
     const task = req.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)

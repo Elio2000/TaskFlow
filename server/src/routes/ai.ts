@@ -1,5 +1,24 @@
 import { Router, Request, Response } from 'express'
 
+// Task-operation protocol — appended to every system prompt so the model knows
+// the exact ```proposals``` block format that the client (AIPanel.applyProposals)
+// and server (stream parser) expect. Without this, the model never emits proposals
+// and "应用全部" can never create tasks.
+const PROPOSAL_PROTOCOL = `
+
+## 任务操作协议（重要）
+当用户意图是创建 / 修改 / 完成 / 删除任务时，先用一两句话自然回复，然后在消息**末尾**附上一个 proposals 代码块（三个反引号加 proposals 语言标记），块内为 JSON 数组，每个元素是一个操作：
+- 创建：{"op":"create","title":"任务标题","due_date":"YYYY-MM-DD","due_time":"HH:MM","priority":1,"description":"可选描述"}
+- 修改：{"op":"update","task_id":"完整任务ID","title":"新标题","due_date":"YYYY-MM-DD"}
+- 完成：{"op":"complete","task_id":"完整任务ID"}
+- 删除：{"op":"delete","task_id":"完整任务ID"}
+规则：due_date / due_time / description 等字段按需省略；priority 取 1-4，数字越小越重要，默认 4；task_id 必须使用「当前任务列表」中方括号内的完整 ID；仅在确有任务增删改需求时才输出该代码块，纯咨询或闲聊不要输出。
+示例：
+好的，已为你拆解：
+\`\`\`proposals
+[{"op":"create","title":"复习线性代数第3章","due_date":"2026-06-15","due_time":"14:00","priority":2}]
+\`\`\``
+
 export function aiRoutes(): Router {
   const router = Router()
 
@@ -52,11 +71,19 @@ export function aiRoutes(): Router {
         const tasks = req.db.prepare("SELECT * FROM tasks WHERE project_id = ? AND completed = 0 AND parent_id IS NULL ORDER BY sort_order ASC LIMIT 30").all(project_id) as any[]
         if (tasks.length) {
           systemPrompt += '\n\n## 当前任务列表\n' + tasks.map((t: any) =>
-            `[${t.id.slice(-6)}] ${t.title}${t.due_date ? ' | 截止:' + t.due_date : ''}${t.priority < 4 ? ' | P' + t.priority : ''}`
+            `[${t.id}] ${t.title}${t.due_date ? ' | 截止:' + t.due_date : ''}${t.priority < 4 ? ' | P' + t.priority : ''}`
           ).join('\n')
         }
       } catch {}
     }
+
+    // Inject current date + task-operation protocol — always, even if agent_rules
+    // overrode the base prompt. The proposals format is a system contract, not a tweak.
+    const now = new Date()
+    const wd = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()]
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    systemPrompt += `\n\n## 当前时间\n今天是 ${dateStr}（周${wd}）。所有相对日期（今天/明天/本周等）以此为基准。`
+    systemPrompt += PROPOSAL_PROTOCOL
 
     // Build conversation history if conv_id provided
     const messages: { role: string; content: string }[] = [

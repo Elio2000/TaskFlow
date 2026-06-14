@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { api } from '../api'
 import type { Task } from '../api'
 import { DateU } from '../utils/date'
+import { dragSource, draggedTaskId } from '../utils/drag'
 import { Icon } from '../icons'
 import { TaskRow } from '../components/TaskRow'
 import { TaskModal } from '../components/TaskModal'
@@ -12,10 +13,11 @@ type CalMode = 'month' | 'week'
 const HOUR_PX = 56
 
 /* ============ MonthView ============ */
-function MonthView({ year, month, tasks, today, selected, onSelect, onOpenTask }: {
+function MonthView({ year, month, tasks, today, selected, onSelect, onOpenTask, onMoveTask }: {
   year: number; month: number; tasks: Task[]; today: string; selected: string;
-  onSelect: (d: string) => void; onOpenTask: (id: string) => void;
+  onSelect: (d: string) => void; onOpenTask: (id: string) => void; onMoveTask: (taskId: string, date: string) => void;
 }) {
+  const [dragOver, setDragOver] = useState<string | null>(null)
   const grid = DateU.monthGrid(year, month)
   const tbd: Record<string, Task[]> = {}
   tasks.filter(t => !t.completed && !t.parent_id && t.due_date).forEach(t => {
@@ -32,10 +34,14 @@ function MonthView({ year, month, tasks, today, selected, onSelect, onOpenTask }
           const ts = tbd[c.date] || []
           const isSel = c.date === selected, isToday = c.date === today
           return (
-            <div key={c.date} onClick={() => onSelect(c.date)} style={{ minHeight:70,borderRadius:8,padding:'5px 6px',cursor:'pointer',background:isSel?'var(--accent-soft)':isToday?'var(--bg-hover)':c.inMonth?'var(--bg-card)':'transparent',border:isSel?'1.5px solid var(--accent)':'1px solid var(--border-soft)',opacity:c.inMonth?1:.4 }}>
+            <div key={c.date} onClick={() => onSelect(c.date)}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(c.date) }}
+              onDragLeave={(e) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOver(d => d === c.date ? null : d) }}
+              onDrop={(e) => { e.preventDefault(); setDragOver(null); const id = draggedTaskId(e); if (id) onMoveTask(id, c.date) }}
+              style={{ minHeight:70,borderRadius:8,padding:'5px 6px',cursor:'pointer',background:dragOver===c.date?'var(--accent-soft)':isSel?'var(--accent-soft)':isToday?'var(--bg-hover)':c.inMonth?'var(--bg-card)':'transparent',border:(isSel||dragOver===c.date)?'1.5px solid var(--accent)':'1px solid var(--border-soft)',opacity:c.inMonth?1:.4 }}>
               <div style={{ fontSize:12.5,fontWeight:isToday||isSel?700:400,color:isToday?'var(--accent-text)':isSel?'var(--accent-text)':'var(--text-primary)',marginBottom:3,textAlign:'right' }}>{c.day}</div>
               {ts.slice(0,3).map(t => (
-                <div key={t.id} onClick={e=>{e.stopPropagation();onOpenTask(t.id)}} style={{ fontSize:11,padding:'1px 4px',borderRadius:3,marginBottom:1,background:'var(--accent-soft)',color:'var(--accent-text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',cursor:'pointer' }}>{t.title}</div>
+                <div key={t.id} {...dragSource(t.id)} onClick={e=>{e.stopPropagation();onOpenTask(t.id)}} style={{ fontSize:11,padding:'1px 4px',borderRadius:3,marginBottom:1,background:'var(--accent-soft)',color:'var(--accent-text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',cursor:'grab' }}>{t.title}</div>
               ))}
               {ts.length>3 && <div style={{ fontSize:10.5,color:'var(--text-tertiary)',paddingLeft:4 }}>+{ts.length-3}</div>}
             </div>
@@ -47,8 +53,9 @@ function MonthView({ year, month, tasks, today, selected, onSelect, onOpenTask }
 }
 
 /* ============ DayCol ============ */
-function DayCol({ date, tasks, onSlotClick, onOpenTask }: {
+function DayCol({ date, tasks, onSlotClick, onOpenTask, onDropTask }: {
   date: string; tasks: Task[]; onSlotClick: (date: string, startMin: number, endMin: number) => void; onOpenTask: (id: string) => void;
+  onDropTask: (taskId: string, date: string, minutes: number) => void;
 }) {
   const [cm, setCm] = useState(()=>{const n=new Date();return n.getHours()*60+n.getMinutes()})
   const [dragStart, setDragStart] = useState<number | null>(null)
@@ -71,6 +78,8 @@ function DayCol({ date, tasks, onSlotClick, onOpenTask }: {
         {allDay.slice(0,2).map(t=><div key={t.id} onClick={()=>onOpenTask(t.id)} style={{ fontSize:11,padding:'1px 4px',borderRadius:3,background:'var(--accent-soft)',color:'var(--accent-text)',cursor:'pointer',marginBottom:2,overflow:'hidden',whiteSpace:'nowrap' }}>{t.title}</div>)}
       </div>
       <div ref={timeGridRef} style={{ position:'relative',height:24*HOUR_PX }}
+        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+        onDrop={e => { e.preventDefault(); const id = draggedTaskId(e); if (id) onDropTask(id, date, yToMin(e.clientY)) }}
         onPointerDown={e => { if (e.button !== 0) return; if ((e.target as HTMLElement).closest('[data-task-block]')) return; (e.target as HTMLElement).setPointerCapture(e.pointerId); const m = yToMin(e.clientY); setDragStart(m); setDragEnd(m+30) }}
         onPointerMove={e => { if (dragStart == null) return; setDragEnd(yToMin(e.clientY)) }}
         onPointerUp={e => {
@@ -89,22 +98,23 @@ function DayCol({ date, tasks, onSlotClick, onOpenTask }: {
             {String(Math.floor(Math.min(dragStart,dragEnd)/60)).padStart(2,'0')}:{String(Math.min(dragStart,dragEnd)%60).padStart(2,'0')} – {String(Math.floor(Math.max(dragStart,dragEnd)/60)).padStart(2,'0')}:{String(Math.max(dragStart,dragEnd)%60).padStart(2,'0')}
           </div>
         )}
-        {timed.map(t=>{const [hh,mm]=(t.due_time||'00:00').split(':').map(Number);const top=hh*HOUR_PX+mm*(HOUR_PX/60);const endMin = t.end_time ? (()=>{const[eh,em]=t.end_time.split(':').map(Number);return eh*60+em})() : hh*60+mm+60;const h = Math.max(24, (endMin - (hh*60+mm)) * (HOUR_PX/60));return <div key={t.id} data-task-block="1" onClick={()=>onOpenTask(t.id)} style={{ position:'absolute',left:2,right:2,top,minHeight:24,height:h,background:'var(--accent-soft)',color:'var(--accent-text)',borderRadius:4,padding:'2px 4px',fontSize:11,cursor:'pointer',zIndex:1,overflow:'hidden' }}><div style={{ fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{t.title}</div><div style={{ fontSize:10 }}>{t.due_time}{t.end_time?' – '+t.end_time:''}</div></div>})}
+        {timed.map(t=>{const [hh,mm]=(t.due_time||'00:00').split(':').map(Number);const top=hh*HOUR_PX+mm*(HOUR_PX/60);const endMin = t.end_time ? (()=>{const[eh,em]=t.end_time.split(':').map(Number);return eh*60+em})() : hh*60+mm+60;const h = Math.max(24, (endMin - (hh*60+mm)) * (HOUR_PX/60));return <div key={t.id} data-task-block="1" {...dragSource(t.id)} onClick={()=>onOpenTask(t.id)} style={{ position:'absolute',left:2,right:2,top,minHeight:24,height:h,background:'var(--accent-soft)',color:'var(--accent-text)',borderRadius:4,padding:'2px 4px',fontSize:11,cursor:'grab',zIndex:1,overflow:'hidden' }}><div style={{ fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{t.title}</div><div style={{ fontSize:10 }}>{t.due_time}{t.end_time?' – '+t.end_time:''}</div></div>})}
       </div>
     </div>
   )
 }
 
 /* ============ TimeGrid ============ */
-function TimeGrid({ dates, tasks, onSlotClick, onOpenTask }: {
+function TimeGrid({ dates, tasks, onSlotClick, onOpenTask, onDropTask }: {
   dates: string[]; tasks: Task[]; onSlotClick: (date: string, startMin: number, endMin: number) => void; onOpenTask: (id: string) => void;
+  onDropTask: (taskId: string, date: string, minutes: number) => void;
 }) {
   return (
     <div style={{ display:'flex',flex:1,overflowY:'auto',minHeight:0 }}>
       <div style={{ width:48,flexShrink:0 }}>
         {Array.from({length:24},(_,h)=><div key={h} style={{ height:HOUR_PX,paddingRight:8,fontSize:11,color:'var(--text-tertiary)',textAlign:'right' }}>{h===0?'':`${h}:00`}</div>)}
       </div>
-      {dates.map(date=><DayCol key={date} date={date} tasks={tasks.filter(t=>t.due_date===date&&!t.completed&&!t.parent_id)} onSlotClick={onSlotClick} onOpenTask={onOpenTask}/>)}
+      {dates.map(date=><DayCol key={date} date={date} tasks={tasks.filter(t=>t.due_date===date&&!t.completed&&!t.parent_id)} onSlotClick={onSlotClick} onOpenTask={onOpenTask} onDropTask={onDropTask}/>)}
     </div>
   )
 }
@@ -150,6 +160,13 @@ export function CalendarView() {
 
   const today = DateU.today()
   const navigate = (dir:1|-1) => { if (mode==='month') setCursor(DateU.addMonths(cursor,dir)); else setCursor(DateU.addDays(cursor,dir*7)) }
+  // Drag a task onto a calendar day → set its due_date (due_time preserved)
+  const handleMoveToDate = async (taskId: string, date: string) => { await api.updateTask(taskId, { due_date: date } as any); fetch() }
+  // Drag a task onto a week-view time slot → set due_date + due_time (snapped to 15 min by yToMin)
+  const handleDropToSlot = async (taskId: string, date: string, minutes: number) => {
+    const due_time = String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0')
+    await api.updateTask(taskId, { due_date: date, due_time } as any); fetch()
+  }
   const weekDates = DateU.weekDates(cursor)
   const dayTasks = tasks.filter(t=>t.due_date===selected&&!t.parent_id&&!t.completed)
 
@@ -172,12 +189,12 @@ export function CalendarView() {
       {mode==='month' && (
         <div style={{ padding:'10px 24px 24px',display:'grid',gridTemplateColumns:'1fr 300px',gap:24,flex:1,overflow:'hidden' }}>
           <div style={{ overflowY:'auto' }}>
-            <MonthView year={new Date(cursor+'T00:00:00').getFullYear()} month={new Date(cursor+'T00:00:00').getMonth()} tasks={tasks} today={today} selected={selected} onSelect={setSelected} onOpenTask={setTaskModal}/>
+            <MonthView year={new Date(cursor+'T00:00:00').getFullYear()} month={new Date(cursor+'T00:00:00').getMonth()} tasks={tasks} today={today} selected={selected} onSelect={setSelected} onOpenTask={setTaskModal} onMoveTask={handleMoveToDate}/>
           </div>
           <div style={{ borderLeft:'1px solid var(--border-soft)',paddingLeft:20,overflowY:'auto' }}>
             <div style={{ fontWeight:600,fontSize:14.5,marginBottom:10,color:selected===today?'var(--accent-text)':'var(--text-primary)' }}>{DateU.human(selected)} <span style={{ fontWeight:400,fontSize:12.5,color:'var(--text-tertiary)' }}>({dayTasks.length} 条)</span></div>
             <QuickComposer projectId="inbox" defaultDueDate={selected} placeholder="为这天添加任务…" autoFocus={false} onDone={fetch}/>
-            {dayTasks.length===0 ? <div style={{ fontSize:13,color:'var(--text-tertiary)',paddingTop:8 }}>无任务</div> : dayTasks.map(t=><TaskRow key={t.id} task={t} showProject onClick={()=>setTaskModal(t.id)} onAIClick={task=>{setAiTask(task);setAiOpen(true)}} onDelete={fetch} onToggle={fetch}/>)}
+            {dayTasks.length===0 ? <div style={{ fontSize:13,color:'var(--text-tertiary)',paddingTop:8 }}>无任务</div> : dayTasks.map(t=><TaskRow key={t.id} task={t} draggable showProject onClick={()=>setTaskModal(t.id)} onAIClick={task=>{setAiTask(task);setAiOpen(true)}} onDelete={fetch} onToggle={fetch}/>)}
           </div>
         </div>
       )}
@@ -188,7 +205,7 @@ export function CalendarView() {
             <div/>
             {weekDates.map(date=>{const isToday=date===today;const d=new Date(date+'T00:00:00');return <div key={date} style={{ textAlign:'center',padding:'7px 4px' }}><div style={{ fontSize:11,color:'var(--text-tertiary)',marginBottom:2 }}>周{DateU.weekdayCN(date)}</div><div style={{ width:28,height:28,borderRadius:'50%',margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'center',background:isToday?'var(--accent)':'transparent',color:isToday?'#fff':'var(--text-primary)',fontWeight:isToday?700:400,fontSize:14 }}>{d.getDate()}</div></div>})}
           </div>
-          <TimeGrid dates={weekDates} tasks={tasks} onSlotClick={(date,startMin,endMin)=>{const pad=(n:number)=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');setCreateSlot({date,startTime:pad(startMin),endTime:pad(endMin)})}} onOpenTask={setTaskModal}/>
+          <TimeGrid dates={weekDates} tasks={tasks} onSlotClick={(date,startMin,endMin)=>{const pad=(n:number)=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');setCreateSlot({date,startTime:pad(startMin),endTime:pad(endMin)})}} onOpenTask={setTaskModal} onDropTask={handleDropToSlot}/>
         </div>
       )}
 
