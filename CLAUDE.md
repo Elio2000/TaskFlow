@@ -13,17 +13,12 @@ This starts `app.py` (the Python web server) on port 5055. The script checks for
 **Run all tests:**
 ```bash
 npm test
-# Runs: python3 -m unittest discover -s tests -v && node --test tests/proxy.test.mjs
+# Runs: node --test tests/*.test.mjs  (nlp + labels pure-function unit tests, via Node 25 native TS type-stripping)
 ```
 
-**Run a single Python test:**
+**Run a single test file:**
 ```bash
-python3 -m unittest tests.test_app.TestClassName.test_method_name -v
-```
-
-**Run the proxy unit tests only:**
-```bash
-node --test tests/proxy.test.mjs
+node --test tests/nlp.test.mjs
 ```
 
 **Build the frontend:**
