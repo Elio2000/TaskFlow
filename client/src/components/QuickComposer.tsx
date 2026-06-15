@@ -155,7 +155,7 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
           autoFocus={autoFocus}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !loading) { e.preventDefault(); submit() }
+            if (e.key === 'Enter' && !loading && !e.nativeEvent.isComposing) { e.preventDefault(); submit() }
             if (e.key === 'Escape') handleCancel()
           }}
           placeholder={placeholder || '添加任务… 试试「明天下午3点 #论文写作 p2」'}

@@ -30,12 +30,12 @@ export function aiRoutes(): Router {
     }
 
     // Read config from env
-    const apiKey = process.env.DEEPSEEK_API_KEY
+    const apiKey = req.body.apiKey  // BYOK-only: key must be supplied per request; no server fallback key
     const baseUrl = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
-    const model = process.env.AI_PLANNER_MODEL || 'deepseek-chat'
+    const model = req.body.model || process.env.AI_PLANNER_MODEL || 'deepseek-chat'
 
     if (!apiKey) {
-      return res.status(500).json({ error: 'DEEPSEEK_API_KEY not configured' })
+      return res.status(400).json({ error: '请在 AI 设置中填写你的 DeepSeek API Key（本应用仅支持自带 Key）' })
     }
 
     // Build system prompt
@@ -56,7 +56,7 @@ export function aiRoutes(): Router {
         if (proj) systemPrompt += `\n\n当前项目：${proj.name}`
 
         // Load memories
-        const mems = req.db.prepare('SELECT * FROM memories WHERE project_id = ? ORDER BY created_at DESC LIMIT 10').all(project_id) as any[]
+        const mems = req.db.prepare('SELECT * FROM memories WHERE project_id = ? ORDER BY created_at DESC LIMIT 20').all(project_id) as any[]
         if (mems.length) {
           systemPrompt += '\n\n## 项目记忆\n' + mems.map((m: any) => `- ${m.content}`).join('\n')
         }
@@ -67,12 +67,19 @@ export function aiRoutes(): Router {
           systemPrompt += '\n\n## AGENTS.md\n' + doc.content
         }
 
-        // Load recent tasks
-        const tasks = req.db.prepare("SELECT * FROM tasks WHERE project_id = ? AND completed = 0 AND parent_id IS NULL ORDER BY sort_order ASC LIMIT 30").all(project_id) as any[]
+        // Load tasks (incomplete first) with status / due / notes / subtasks so the AI
+        // can plan time and spot gaps across the whole project.
+        const tasks = req.db.prepare("SELECT * FROM tasks WHERE project_id = ? AND parent_id IS NULL ORDER BY completed ASC, sort_order ASC LIMIT 80").all(project_id) as any[]
         if (tasks.length) {
-          systemPrompt += '\n\n## 当前任务列表\n' + tasks.map((t: any) =>
-            `[${t.id}] ${t.title}${t.due_date ? ' | 截止:' + t.due_date : ''}${t.priority < 4 ? ' | P' + t.priority : ''}`
-          ).join('\n')
+          systemPrompt += '\n\n## 项目任务列表（含状态/截止/备注/子任务）\n' + tasks.map((t: any) => {
+            const status = t.completed ? '[已完成]' : '[未完成]'
+            const due = t.due_date ? ` | 截止:${t.due_date}${t.due_time ? ' ' + t.due_time : ''}` : ''
+            const pri = t.priority < 4 ? ` | P${t.priority}` : ''
+            const desc = t.description ? ` | 备注:${String(t.description).replace(/\s+/g, ' ').slice(0, 120)}` : ''
+            const subs = req.db.prepare("SELECT title, completed FROM tasks WHERE parent_id = ? LIMIT 20").all(t.id) as any[]
+            const subStr = subs.length ? ` | 子任务:${subs.map((s: any) => (s.completed ? '✓' : '○') + s.title).join('、')}` : ''
+            return `[${t.id}] ${status} ${t.title}${due}${pri}${desc}${subStr}`
+          }).join('\n')
         }
       } catch {}
     }

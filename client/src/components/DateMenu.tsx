@@ -60,7 +60,7 @@ export const DateMenu: FC<DateMenuProps> = ({ value, time, repeat, onPick, onClo
           onChange={(e) => setText(e.target.value)}
           placeholder="输入日期，如「下周三」「6月20日」"
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && parsed && parsed.due_date) commit(parsed.due_date)
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && parsed && parsed.due_date) commit(parsed.due_date)
           }}
           style={{
             width: '100%',

@@ -3,6 +3,8 @@ import { api } from '../api'
 import type { Task, Project, Memory, Message } from '../api'
 import { DateU } from '../utils/date'
 import { Icon } from '../icons'
+import { byokBody, byokError } from '../utils/byok'
+import { SettingsModal } from '../components/SettingsModal'
 
 /* ============ Markdown 超轻渲染 ============ */
 function MiniMd({ text }: { text: string }) {
@@ -82,6 +84,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
   const [projectId, setProjectId] = useState(initProjectId || 'inbox')
   const [convId, setConvId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [showSettings, setShowSettings] = useState(false)
   const [thinking, setThinking] = useState(false)
   const [activeTab, setActiveTab] = useState<'chat' | 'memory' | 'agents'>('chat')
   const [agentsContent, setAgentsContent] = useState('')
@@ -190,6 +193,11 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
   const send = async () => {
     const text = val.trim()
     if (!text || !convId || thinking) return
+    const byokErr = byokError()
+    if (byokErr) {
+      setMessages(prev => [...prev, { id: '_byok_' + Date.now(), role: 'assistant', content: byokErr, conversation_id: convId, refs: '[]', proposals: null, proposals_applied: 0, created_at: '' }])
+      return
+    }
     setVal('')
     setShowSlash(false)
 
@@ -230,6 +238,9 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
       return
     }
 
+    // Optimistically render the user's message immediately — nothing else reloads it
+    // before the stream finishes, so without this the user's input wouldn't show.
+    setMessages(prev => [...prev, { id: '_user_' + Date.now(), role: 'user', content: text + refContext, conversation_id: convId!, refs: '[]', proposals: null, proposals_applied: 0, created_at: '' }])
     await api.addMessage(convId!, 'user', text + refContext)
     setThinking(true)
 
@@ -240,7 +251,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text + refContext, project_id: projectId, conv_id: convId }),
+        body: JSON.stringify({ message: text + refContext, project_id: projectId, conv_id: convId, ...byokBody() }),
       })
 
       if (!response.ok) {
@@ -367,6 +378,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
               onClick={() => setActiveTab(t)}>{l}</button>
           ))}
         </div>
+        <button className="btn-icon" onClick={() => setShowSettings(true)} title="AI 设置（模型 / 自带 Key）"><Icon name="brain" size={15} /></button>
         <button className="btn-icon" onClick={onClose}><Icon name="x" size={16} /></button>
       </div>
 
@@ -438,6 +450,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
               <div style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg-card)', padding: '8px 12px' }}>
                 <textarea ref={textareaRef} value={val} onChange={handleInput}
                   onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing) return // 输入法组词中，Enter 交给 IME 确认候选，不发送
                     if (mention && mentionItems.length > 0) {
                       if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, mentionItems.length - 1)) }
                       else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
@@ -502,6 +515,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
           )}
         </div>
       )}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   )
 

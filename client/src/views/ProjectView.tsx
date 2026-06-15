@@ -109,7 +109,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
           <div style={{ marginTop: 16 }}>
             {newSec ? (
               <input autoFocus value={newSecName} onChange={e => setNewSecName(e.target.value)}
-                onKeyDown={async e => { if (e.key === 'Enter' && newSecName.trim()) { await api.addSection(projectId, newSecName.trim()); setNewSecName(''); setNewSec(false); fetch() } }}
+                onKeyDown={async e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && newSecName.trim()) { await api.addSection(projectId, newSecName.trim()); setNewSecName(''); setNewSec(false); fetch() } }}
                 placeholder="分区名称…" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 13.5, background: 'var(--bg-content)', color: 'var(--text-primary)', outline: 'none', width: '100%' }} />
             ) : (
               <button className="btn-ghost" style={{ color: 'var(--text-tertiary)' }} onClick={() => setNewSec(true)}><Icon name="plus" size={14} /> 添加分区</button>
@@ -127,7 +127,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
           })}
           <div style={{ width: 260, flex: 'none' }}>
             <input value={newColName} onChange={e => setNewColName(e.target.value)}
-              onKeyDown={async e => { if (e.key === 'Enter' && newColName.trim()) { await api.addSection(projectId, newColName.trim()); setNewColName(''); fetch() } }}
+              onKeyDown={async e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && newColName.trim()) { await api.addSection(projectId, newColName.trim()); setNewColName(''); fetch() } }}
               placeholder="+ 新建分区" style={{ width: '100%', border: '1.5px dashed var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 13.5, background: 'transparent', color: 'var(--text-secondary)', outline: 'none' }} />
           </div>
         </div>

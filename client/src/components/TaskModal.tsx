@@ -150,7 +150,7 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
                   setEditTitle(false)
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                     if (titleVal.trim()) save({ title: titleVal.trim() })
                     setEditTitle(false)
                   }
@@ -300,7 +300,7 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
                   value={newSub}
                   onChange={(e) => setNewSub(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') addSubtask()
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) addSubtask()
                   }}
                   placeholder="添加子任务…"
                   style={{

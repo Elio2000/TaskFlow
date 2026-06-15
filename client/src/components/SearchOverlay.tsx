@@ -34,7 +34,7 @@ export function SearchOverlay({ onClose, onOpenTask }: SearchOverlayProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--border-soft)' }}>
           <Icon name="search" size={18} style={{ color: 'var(--text-tertiary)', flex: 'none' }} />
           <input autoFocus value={q} onChange={(e) => search(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Escape') onClose(); if (e.key === 'Enter' && results[0]) { onOpenTask(results[0]); onClose() } }}
+            onKeyDown={(e) => { if (e.key === 'Escape') onClose(); if (e.key === 'Enter' && !e.nativeEvent.isComposing && results[0]) { onOpenTask(results[0]); onClose() } }}
             placeholder="搜索任务…"
             style={{ flex: 1, border: 'none', outline: 'none', background: 'none', fontSize: 16, color: 'var(--text-primary)' }} />
           <kbd style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--bg-inset)', padding: '2px 7px', borderRadius: 5 }}>Esc</kbd>

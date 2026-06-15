@@ -374,7 +374,7 @@ function BoardView({ projectId }: { projectId: string }) {
         })}
         <div style={{ width: 260, flex: 'none' }}>
           <input value={newColName} onChange={(e) => setNewColName(e.target.value)}
-            onKeyDown={async (e) => { if (e.key === 'Enter' && newColName.trim()) { await api.addSection(projectId, newColName.trim()); setNewColName(''); fetch() } }}
+            onKeyDown={async (e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && newColName.trim()) { await api.addSection(projectId, newColName.trim()); setNewColName(''); fetch() } }}
             placeholder="+ 新建分区"
             style={{ width: '100%', border: '1.5px dashed var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 13.5, background: 'transparent', color: 'var(--text-secondary)', outline: 'none' }} />
         </div>
