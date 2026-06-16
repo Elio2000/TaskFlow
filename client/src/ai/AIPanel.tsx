@@ -3,6 +3,8 @@ import { api } from '../api'
 import type { Task, Project, Memory, Message } from '../api'
 import { DateU } from '../utils/date'
 import { Icon } from '../icons'
+import { byokBody, byokError } from '../utils/byok'
+import { SettingsModal } from '../components/SettingsModal'
 
 /* ============ Markdown 超轻渲染 ============ */
 function MiniMd({ text }: { text: string }) {
@@ -47,6 +49,58 @@ function ProposalCard({ proposals, onApply, onReject }: { proposals: any[]; onAp
   )
 }
 
+/* ============ QuestionCard（智能反问） ============ */
+function QuestionCard({ questions, onSubmit }: { questions: { q: string; options: string[] }[]; onSubmit: (text: string) => void }) {
+  const OTHER = '__other__'
+  const [selected, setSelected] = useState<Record<number, string>>({})
+  const [otherText, setOtherText] = useState<Record<number, string>>({})
+
+  const answerOf = (i: number) => selected[i] === OTHER ? (otherText[i] || '').trim() : (selected[i] || '')
+  const allAnswered = questions.every((_, i) => answerOf(i).length > 0)
+
+  const submit = () => {
+    if (!allAnswered) return
+    onSubmit(questions.map((q, i) => `${q.q} ${answerOf(i)}`).join('\n'))
+  }
+
+  const renderChip = (qi: number, label: string, value: string) => {
+    const active = selected[qi] === value
+    return (
+      <button key={value} onClick={() => setSelected(s => ({ ...s, [qi]: value }))}
+        style={{ fontSize: 12.5, padding: '4px 11px', borderRadius: 14, cursor: 'pointer', border: '1px solid ' + (active ? 'var(--ai)' : 'var(--border)'), background: active ? 'var(--ai)' : 'var(--bg-content)', color: active ? '#fff' : 'var(--text-secondary)' }}>{label}</button>
+    )
+  }
+
+  return (
+    <div className="proposal-card">
+      <div style={{ padding: '8px 12px 6px', display: 'flex', alignItems: 'center', gap: 7 }}>
+        <Icon name="sparkle" size={14} style={{ color: 'var(--ai)' }} />
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ai)' }}>请补充几个细节</span>
+      </div>
+      {questions.map((q, i) => (
+        <div key={i} style={{ padding: '4px 12px 8px' }}>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{q.q}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {(q.options || []).map(opt => renderChip(i, opt, opt))}
+            {renderChip(i, '其他', OTHER)}
+          </div>
+          {selected[i] === OTHER && (
+            <input autoFocus value={otherText[i] || ''} onChange={e => setOtherText(t => ({ ...t, [i]: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submit() } }}
+              placeholder="输入你的答案"
+              style={{ marginTop: 6, width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '6px 9px', fontSize: 13, background: 'var(--bg-content)', color: 'var(--text-primary)', outline: 'none' }} />
+          )}
+        </div>
+      ))}
+      <div style={{ padding: '4px 12px 10px' }}>
+        <button className="btn-primary" style={{ fontSize: 12.5, width: '100%', opacity: allAnswered ? 1 : .5 }} disabled={!allAnswered} onClick={submit}>
+          <Icon name="send" size={13} /> 提交回答
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /* ============ MentionMenu ============ */
 function MentionMenu({ items, onSelect, selectedIndex }: { items: any[]; onSelect: (item: any) => void; selectedIndex: number }) {
   if (!items.length) return null
@@ -82,6 +136,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
   const [projectId, setProjectId] = useState(initProjectId || 'inbox')
   const [convId, setConvId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [showSettings, setShowSettings] = useState(false)
   const [thinking, setThinking] = useState(false)
   const [activeTab, setActiveTab] = useState<'chat' | 'memory' | 'agents'>('chat')
   const [agentsContent, setAgentsContent] = useState('')
@@ -126,6 +181,15 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [messages, thinking])
+
+  // Auto-grow the input with its content (whether typed or set programmatically), up to
+  // a max height after which it scrolls — so a multi-line message stays fully visible.
+  useEffect(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = Math.min(ta.scrollHeight, 132) + 'px'
+  }, [val])
 
   useEffect(() => {
     if (refTask) setRefs([{ type: 'task', id: refTask.id, name: refTask.title }])
@@ -187,10 +251,15 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
   }
 
   /* ============ send / compact ============ */
-  const send = async () => {
-    const text = val.trim()
+  const send = async (override?: string) => {
+    const text = (override ?? val).trim()
     if (!text || !convId || thinking) return
-    setVal('')
+    const byokErr = byokError()
+    if (byokErr) {
+      setMessages(prev => [...prev, { id: '_byok_' + Date.now(), role: 'assistant', content: byokErr, conversation_id: convId, refs: '[]', proposals: null, proposals_applied: 0, created_at: '' }])
+      return
+    }
+    if (override === undefined) setVal('')
     setShowSlash(false)
 
     // Build ref context for AI
@@ -230,6 +299,9 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
       return
     }
 
+    // Optimistically render the user's message immediately — nothing else reloads it
+    // before the stream finishes, so without this the user's input wouldn't show.
+    setMessages(prev => [...prev, { id: '_user_' + Date.now(), role: 'user', content: text + refContext, conversation_id: convId!, refs: '[]', proposals: null, proposals_applied: 0, created_at: '' }])
     await api.addMessage(convId!, 'user', text + refContext)
     setThinking(true)
 
@@ -240,7 +312,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text + refContext, project_id: projectId, conv_id: convId }),
+        body: JSON.stringify({ message: text + refContext, project_id: projectId, conv_id: convId, ...byokBody() }),
       })
 
       if (!response.ok) {
@@ -259,6 +331,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
       let fullContent = ''
       let fullReasoning = ''
       let proposals: any = null
+      let questions: any = null
       let currentEvent = ''
 
       if (reader) {
@@ -290,6 +363,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
               } else if (currentEvent === 'done') {
                 fullContent = obj.content || fullContent
                 proposals = obj.proposals
+                questions = obj.questions
                 fullReasoning = obj.reasoning_content || fullReasoning
               }
               // reset event after processing data
@@ -302,7 +376,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
       setMessages(prev => prev.filter(m => m.id !== streamingId))
 
       // Don't save empty assistant messages
-      if (!fullContent.trim() && !proposals) {
+      if (!fullContent.trim() && !proposals && !questions) {
         setThinking(false)
         return
       }
@@ -314,7 +388,9 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
         api.addMemory(projectId, `Chat summary (${allMsgs.length}): ${fullContent.slice(0, 120)}`, 'ai')
       }
 
-      setMessages(prev => [...prev.filter(m => m.id !== streamingId), saved])
+      // questions are a transient frontend-only interaction (not persisted), so attach
+      // them to the in-memory message object rather than the DB row.
+      setMessages(prev => [...prev.filter(m => m.id !== streamingId), { ...saved, questions } as any])
     } catch (err: any) {
       setMessages(prev => prev.filter(m => m.id !== streamingId))
       await api.addMessage(convId!, 'assistant', 'Error: ' + err.message)
@@ -367,6 +443,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
               onClick={() => setActiveTab(t)}>{l}</button>
           ))}
         </div>
+        <button className="btn-icon" onClick={() => setShowSettings(true)} title="AI 设置（模型 / 自带 Key）"><Icon name="brain" size={15} /></button>
         <button className="btn-icon" onClick={onClose}><Icon name="x" size={16} /></button>
       </div>
 
@@ -396,6 +473,16 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
                   catch { return null }
                 })()}
                 {msg.proposals_applied ? <span style={{ fontSize: 11.5, color: 'var(--green)' }}><Icon name="check" size={12} /> 已应用</span> : null}
+                {(() => {
+                  const m = msg as any
+                  if (!m.questions || m.questions_answered) return null
+                  const arr = typeof m.questions === 'string' ? (() => { try { return JSON.parse(m.questions) } catch { return null } })() : m.questions
+                  if (!Array.isArray(arr) || !arr.length) return null
+                  return <QuestionCard questions={arr} onSubmit={(text) => {
+                    setMessages(prev => prev.map(x => x.id === msg.id ? ({ ...x, questions_answered: 1 } as any) : x))
+                    send(text)
+                  }} />
+                })()}
               </div>
             ))}
             {thinking && (
@@ -438,6 +525,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
               <div style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg-card)', padding: '8px 12px' }}>
                 <textarea ref={textareaRef} value={val} onChange={handleInput}
                   onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing) return // 输入法组词中，Enter 交给 IME 确认候选，不发送
                     if (mention && mentionItems.length > 0) {
                       if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, mentionItems.length - 1)) }
                       else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)) }
@@ -456,10 +544,10 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
                   }}
                   placeholder="发消息… @ 引用任务，/ 查看命令"
                   rows={1} disabled={thinking}
-                  style={{ border: 'none', outline: 'none', resize: 'none', background: 'none', fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.5, width: '100%', fontFamily: 'var(--font)' }} />
+                  style={{ border: 'none', outline: 'none', resize: 'none', background: 'none', fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.5, width: '100%', fontFamily: 'var(--font)', maxHeight: 132, overflowY: 'auto', display: 'block' }} />
               </div>
               <button className="btn-icon" style={{ background: val.trim() ? 'var(--ai)' : 'var(--bg-inset)', color: val.trim() ? '#fff' : 'var(--text-tertiary)', borderRadius: 10, width: 36, height: 36, flex: 'none' }}
-                onClick={send} disabled={!val.trim() || thinking}>
+                onClick={() => send()} disabled={!val.trim() || thinking}>
                 <Icon name="send" size={16} />
               </button>
             </div>
@@ -502,6 +590,7 @@ export function AIPanel({ projectId: initProjectId, refTask, layout, onClose }: 
           )}
         </div>
       )}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   )
 

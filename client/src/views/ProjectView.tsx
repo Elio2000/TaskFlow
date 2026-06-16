@@ -9,6 +9,7 @@ import { TaskModal } from '../components/TaskModal'
 import { QuickComposer } from '../components/QuickComposer'
 import { AIPanel } from '../ai/AIPanel'
 import { parseTaskLabels } from '../utils/labels'
+import { dragSource, draggedTaskId, noDrag } from '../utils/drag'
 
 function ViewShell({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -29,8 +30,6 @@ function ViewShell({ title, subtitle, actions, children }: { title: string; subt
   )
 }
 
-type DragState = { taskId: string | null; fromSection: string | null }
-
 export function ProjectView({ projectId }: { projectId: string }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [project, setProject] = useState<Project | null>(null)
@@ -42,9 +41,6 @@ export function ProjectView({ projectId }: { projectId: string }) {
   const [newColName, setNewColName] = useState('')
   const [newSec, setNewSec] = useState(false)
   const [newSecName, setNewSecName] = useState('')
-  const boardDrag = useRef<DragState>({ taskId: null, fromSection: null })
-  const boardHandleDown = useRef(false)
-
   const fetch = async () => {
     const [p, secs, ts] = await Promise.all([
       api.getProject(projectId), api.getSections(projectId), api.getTasks({ project_id: projectId }),
@@ -65,6 +61,21 @@ export function ProjectView({ projectId }: { projectId: string }) {
   const openTask = (t: Task) => setTaskModal(t.id)
   const openAI = (t: Task) => { setAiTask(t); setAiOpen(true) }
 
+  // List drag reorder / move-to-section (shared util: task id travels via dataTransfer).
+  // Renumber the target section so order is stable even when tasks share the default sort_order.
+  const handleListMove = async (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return
+    const target = tasks.find(t => t.id === targetId)
+    const dragged = tasks.find(t => t.id === draggedId)
+    if (!target || !dragged) return
+    const sec = target.section_id || null
+    const peers = tasks.filter(t => (t.section_id || null) === sec && !t.parent_id && !t.completed && t.id !== draggedId).sort((a, b) => a.sort_order - b.sort_order)
+    const ti = peers.findIndex(t => t.id === targetId)
+    peers.splice(Math.max(0, ti), 0, dragged)
+    await Promise.all(peers.map((t, i) => api.updateTask(t.id, { section_id: sec, sort_order: i } as any)))
+    fetch()
+  }
+
   const actions = (
     <div style={{ display: 'flex', gap: 2, background: 'var(--bg-inset)', borderRadius: 8, padding: 3 }}>
       <button className={viewMode === 'list' ? 'btn-primary' : 'btn-ghost'} style={{ fontSize: 12, padding: '3px 8px' }}
@@ -76,11 +87,11 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
   return (
     <ViewShell title={project.name} subtitle={viewMode === 'board' ? '看板视图' : '列表视图'} actions={actions}>
-      <QuickComposer projectId={projectId} onDone={fetch} />
+      <QuickComposer projectId={projectId} collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
 
       {viewMode === 'list' && (
         <>
-          {unsectioned.map(t => <TaskRow key={t.id} task={t} onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)}
+          {unsectioned.map(t => <TaskRow key={t.id} task={t} draggable onMoveTo={(draggedId) => handleListMove(draggedId, t.id)} onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)}
           {sections.map(s => {
             const ts = tasks.filter(t => t.project_id === projectId && t.section_id === s.id && !t.parent_id && !t.completed)
             return (
@@ -90,15 +101,15 @@ export function ProjectView({ projectId }: { projectId: string }) {
                   <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{ts.length}</span>
                   <button className="btn-icon" style={{ width: 24, height: 24 }} onClick={async () => { await api.deleteSection(s.id); fetch() }}><Icon name="trash" size={12} /></button>
                 </div>
-                {ts.map(t => <TaskRow key={t.id} task={t} onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)}
-                <QuickComposer projectId={projectId} sectionId={s.id} autoFocus={false} onDone={fetch} />
+                {ts.map(t => <TaskRow key={t.id} task={t} draggable onMoveTo={(draggedId) => handleListMove(draggedId, t.id)} onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)}
+                <QuickComposer projectId={projectId} sectionId={s.id} collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
               </div>
             )
           })}
           <div style={{ marginTop: 16 }}>
             {newSec ? (
               <input autoFocus value={newSecName} onChange={e => setNewSecName(e.target.value)}
-                onKeyDown={async e => { if (e.key === 'Enter' && newSecName.trim()) { await api.addSection(projectId, newSecName.trim()); setNewSecName(''); setNewSec(false); fetch() } }}
+                onKeyDown={async e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && newSecName.trim()) { await api.addSection(projectId, newSecName.trim()); setNewSecName(''); setNewSec(false); fetch() } }}
                 placeholder="分区名称…" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 13.5, background: 'var(--bg-content)', color: 'var(--text-primary)', outline: 'none', width: '100%' }} />
             ) : (
               <button className="btn-ghost" style={{ color: 'var(--text-tertiary)' }} onClick={() => setNewSec(true)}><Icon name="plus" size={14} /> 添加分区</button>
@@ -109,14 +120,14 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
       {viewMode === 'board' && (
         <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 16, alignItems: 'flex-start' }}>
-          {unsectioned.length > 0 && <BoardCol section={null} tasks={unsectioned} onOpenTask={openTask} projectId={projectId} onRefresh={fetch} dragRef={boardDrag} handleDownRef={boardHandleDown} />}
+          {unsectioned.length > 0 && <BoardCol section={null} tasks={unsectioned} onOpenTask={openTask} projectId={projectId} onRefresh={fetch} />}
           {sections.map(s => {
             const ts = tasks.filter(t => t.project_id === projectId && t.section_id === s.id && !t.parent_id && !t.completed)
-            return <BoardCol key={s.id} section={s} tasks={ts} onOpenTask={openTask} projectId={projectId} onRefresh={fetch} dragRef={boardDrag} handleDownRef={boardHandleDown} />
+            return <BoardCol key={s.id} section={s} tasks={ts} onOpenTask={openTask} projectId={projectId} onRefresh={fetch} />
           })}
           <div style={{ width: 260, flex: 'none' }}>
             <input value={newColName} onChange={e => setNewColName(e.target.value)}
-              onKeyDown={async e => { if (e.key === 'Enter' && newColName.trim()) { await api.addSection(projectId, newColName.trim()); setNewColName(''); fetch() } }}
+              onKeyDown={async e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && newColName.trim()) { await api.addSection(projectId, newColName.trim()); setNewColName(''); fetch() } }}
               placeholder="+ 新建分区" style={{ width: '100%', border: '1.5px dashed var(--border)', borderRadius: 10, padding: '8px 12px', fontSize: 13.5, background: 'transparent', color: 'var(--text-secondary)', outline: 'none' }} />
           </div>
         </div>
@@ -129,18 +140,15 @@ export function ProjectView({ projectId }: { projectId: string }) {
 }
 
 /* ============ BoardCol/BoardCard for project view ============ */
-function BoardCard({ task, sectionId, onOpenTask, dragRef, handleDownRef, onRefresh }: {
-  task: Task; sectionId: string | null; onOpenTask: (t: Task) => void;
-  dragRef: React.MutableRefObject<DragState>; handleDownRef: React.MutableRefObject<boolean>; onRefresh: () => void;
+function BoardCard({ task, onOpenTask, onRefresh }: {
+  task: Task; onOpenTask: (t: Task) => void; onRefresh: () => void;
 }) {
   return (
-    <div data-task-id={task.id} className="board-card" draggable
-      onDragStart={e => { if (!handleDownRef.current) { e.preventDefault(); return } dragRef.current.taskId = task.id; dragRef.current.fromSection = sectionId; e.dataTransfer.effectAllowed = 'move'; setTimeout(() => { (e.target as HTMLElement).style.opacity = '0.4' }, 0) }}
-      onDragEnd={e => { handleDownRef.current = false; dragRef.current.taskId = null; (e.target as HTMLElement).style.opacity = '1' }}
+    <div data-task-id={task.id} className="board-card" {...dragSource(task.id)}
       onClick={() => onOpenTask(task)} style={{ position: 'relative', paddingLeft: 44 }}>
-      <span className="board-drag-handle" onMouseDown={e => { e.stopPropagation(); handleDownRef.current = true }} onMouseUp={() => { handleDownRef.current = false }}
+      <span className="board-drag-handle"
         style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', cursor: 'grab', fontSize: 13, lineHeight: 1, color: 'transparent', userSelect: 'none', transition: 'color .12s' }}>⠿</span>
-      <div style={{ position: 'absolute', left: 22, top: '50%', transform: 'translateY(-50%)' }} onMouseDown={e => e.stopPropagation()}>
+      <div style={{ position: 'absolute', left: 22, top: '50%', transform: 'translateY(-50%)' }} {...noDrag}>
         <TaskCheckbox task={task} onToggle={onRefresh} />
       </div>
       <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: parseTaskLabels(task.labels).length || task.due_date ? 8 : 0, lineHeight: 1.45 }}>{task.title}</div>
@@ -149,9 +157,9 @@ function BoardCard({ task, sectionId, onOpenTask, dragRef, handleDownRef, onRefr
   )
 }
 
-function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh, dragRef, handleDownRef }: {
+function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh }: {
   section: Section | null; tasks: Task[]; onOpenTask: (t: Task) => void;
-  projectId: string; onRefresh: () => void; dragRef: React.MutableRefObject<DragState>; handleDownRef: React.MutableRefObject<boolean>;
+  projectId: string; onRefresh: () => void;
 }) {
   const [addingCard, setAddingCard] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -169,7 +177,7 @@ function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh, dragRef, h
     <div className="board-col" ref={colRef}
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(true); setInsertBefore(getInsertTarget(e.clientY)) }}
       onDragLeave={e => { if (!colRef.current?.contains(e.relatedTarget as Node)) { setDragOver(false); setInsertBefore(null) } }}
-      onDrop={async e => { e.preventDefault(); setDragOver(false); setInsertBefore(null); const tid = dragRef.current.taskId; if (!tid) return
+      onDrop={async e => { e.preventDefault(); setDragOver(false); setInsertBefore(null); const tid = draggedTaskId(e); if (!tid) return
         const tasksInCol = tasks.filter(t => t.id !== tid); let no: number
         if (insertBefore === 'end' || !insertBefore) no = tasksInCol.length > 0 ? Math.max(...tasksInCol.map(t => t.sort_order)) + 1 : 0
         else { const idx = tasksInCol.findIndex(t => t.id === insertBefore); no = idx === 0 ? tasksInCol[0].sort_order - 1 : (idx > 0 ? (tasksInCol[idx - 1].sort_order + tasksInCol[idx].sort_order) / 2 : 0) }
@@ -181,8 +189,8 @@ function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh, dragRef, h
         <button className="btn-icon" style={{ width: 24, height: 24 }} onClick={() => setAddingCard(true)}><Icon name="plus" size={14} /></button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, minHeight: 40, borderRadius: 10, padding: dragOver ? '4px' : '0', background: dragOver ? 'var(--bg-hover)' : 'transparent', border: dragOver ? '1.5px dashed var(--border)' : '1.5px solid transparent', transition: 'all .12s' }}>
-        {addingCard && <div className="board-card" style={{ padding: 8 }}><QuickComposer projectId={projectId} sectionId={sectionId || undefined} placeholder="任务名称…" autoFocus onDone={() => { setAddingCard(false); onRefresh() }} /></div>}
-        {tasks.map(t => (<div key={t.id}>{insertBefore === t.id && dragOver && <div style={{ height: 2, borderRadius: 2, background: 'var(--accent)', margin: '0 4px' }} />}<BoardCard task={t} sectionId={sectionId} onOpenTask={onOpenTask} dragRef={dragRef} handleDownRef={handleDownRef} onRefresh={onRefresh} /></div>))}
+        {addingCard && <div className="board-card" style={{ padding: 8 }}><QuickComposer projectId={projectId} sectionId={sectionId || undefined} placeholder="任务名称…" autoFocus onCancel={() => setAddingCard(false)} onDone={() => { setAddingCard(false); onRefresh() }} /></div>}
+        {tasks.map(t => (<div key={t.id}>{insertBefore === t.id && dragOver && <div style={{ height: 2, borderRadius: 2, background: 'var(--accent)', margin: '0 4px' }} />}<BoardCard task={t} onOpenTask={onOpenTask} onRefresh={onRefresh} /></div>))}
         {insertBefore === 'end' && dragOver && <div style={{ height: 2, borderRadius: 2, background: 'var(--accent)', margin: '0 4px' }} />}
         {!addingCard && <button className="btn-ghost" style={{ justifyContent: 'flex-start', color: 'var(--text-tertiary)', fontSize: 13 }} onClick={() => setAddingCard(true)}><Icon name="plus" size={13} /> 添加任务</button>}
       </div>

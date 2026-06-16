@@ -3,6 +3,7 @@ import { api } from '../api'
 import type { Project } from '../api'
 import { DateU } from '../utils/date'
 import { Icon } from '../icons'
+import { SettingsModal } from './SettingsModal'
 
 const PROJECT_COLORS = ['#c25e4c','#c98a2e','#5b7fa6','#7a9461','#8a6fa8','#4a7fa8','#c26e3a']
 
@@ -76,6 +77,7 @@ export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onTog
   const [addingProject, setAddingProject] = useState(false)
   const [newProjName, setNewProjName] = useState('')
   const [pickColor, setPickColor] = useState(PROJECT_COLORS[0])
+  const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     api.getProjects().then(setProjects)
@@ -160,7 +162,7 @@ export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onTog
         {addingProject && (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginTop: 6 }}>
             <input autoFocus value={newProjName} onChange={(e) => setNewProjName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') createProject(); if (e.key === 'Escape') { setAddingProject(false); setNewProjName(''); } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) createProject(); if (e.key === 'Escape') { setAddingProject(false); setNewProjName(''); } }}
               placeholder="项目名称"
               style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '6px 9px', fontSize: 13, background: 'var(--bg-content)', color: 'var(--text-primary)', outline: 'none', marginBottom: 8 }} />
             <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
@@ -185,11 +187,15 @@ export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onTog
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
           </button>
         )}
+        <button className="btn-icon" style={{ width: 32, height: 32, flex: 'none' }} title="AI 设置" onClick={() => setShowSettings(true)}>
+          <Icon name="brain" size={15} />
+        </button>
         <button className="btn-ghost" style={{ flex: 1, justifyContent: 'flex-start', fontSize: 12.5 }}
           onClick={() => { const data = JSON.stringify({ projects, tasks: [] }); const a = document.createElement('a'); a.href = 'data:application/json,' + encodeURIComponent(data); a.download = 'taskflow-export.json'; a.click() }}>
           <Icon name="archive" size={14} /> 导出数据
         </button>
       </div>
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

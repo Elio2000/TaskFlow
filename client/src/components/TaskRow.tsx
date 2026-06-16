@@ -4,6 +4,7 @@ import React from 'react'
 import { Icon } from '../icons'
 import { TaskCheckbox } from './TaskCheckbox'
 import { TaskChips } from './TaskChips'
+import { dragSource, draggedTaskId, noDrag } from '../utils/drag'
 
 interface TaskRowProps {
   task: Task
@@ -15,13 +16,13 @@ interface TaskRowProps {
   selectable?: boolean
   selected?: boolean
   onSelect?: (id: string) => void
+  /** Make the whole row a drag source. */
   draggable?: boolean
-  onDragStart?: (e: React.DragEvent) => void
-  onDragOver?: (e: React.DragEvent) => void
-  onDrop?: (e: React.DragEvent) => void
+  /** Called when another task is dropped onto this row (reorder / move). */
+  onMoveTo?: (draggedId: string) => void
 }
 
-export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onToggle, selectable, selected, onSelect, draggable, onDragStart, onDragOver, onDrop }: TaskRowProps) {
+export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onToggle, selectable, selected, onSelect, draggable, onMoveTo }: TaskRowProps) {
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
     await api.deleteTask(task.id)
@@ -32,21 +33,21 @@ export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onTog
     <div
       className={'task-row' + (task.completed ? ' is-done' : '')}
       data-task-id={task.id}
-      draggable={draggable}
-      onDragStart={draggable ? onDragStart : undefined}
-      onDragOver={draggable ? onDragOver : undefined}
-      onDrop={draggable ? onDrop : undefined}
+      {...(draggable ? dragSource(task.id) : {})}
+      onDragOver={onMoveTo ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' } : undefined}
+      onDrop={onMoveTo ? (e) => { e.preventDefault(); const id = draggedTaskId(e); if (id && id !== task.id) onMoveTo(id) } : undefined}
       onClick={() => onClick && onClick(task)}
     >
       {draggable && (
-        <span style={{ cursor: 'grab', color: 'var(--text-tertiary)', fontSize: 13, lineHeight: 1, userSelect: 'none', flex: 'none', paddingTop: 2 }}
-          onMouseDown={e => e.stopPropagation()}>⠿</span>
+        <span style={{ cursor: 'grab', color: 'var(--text-tertiary)', fontSize: 13, lineHeight: 1, userSelect: 'none', flex: 'none', paddingTop: 2 }}>⠿</span>
       )}
       {selectable && (
-        <input type="checkbox" checked={selected || false} style={{ marginTop: 3, flex: 'none', accentColor: 'var(--accent)' }}
+        <input type="checkbox" checked={selected || false} {...noDrag} style={{ marginTop: 3, flex: 'none', accentColor: 'var(--accent)' }}
           onChange={() => onSelect?.(task.id)} onClick={e => e.stopPropagation()} />
       )}
-      <TaskCheckbox task={task} onToggle={onToggle} />
+      <span {...noDrag} style={{ display: 'flex', flex: 'none' }}>
+        <TaskCheckbox task={task} onToggle={onToggle} />
+      </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="task-title">{task.title}</div>
         <TaskChips task={task} showProject={showProject} />
@@ -54,6 +55,7 @@ export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onTog
       <div className="task-actions" style={{ paddingTop: 2 }}>
         <button
           className="btn-icon"
+          {...noDrag}
           style={{ width: 26, height: 26 }}
           onClick={(e) => {
             e.stopPropagation()
@@ -65,6 +67,7 @@ export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onTog
         </button>
         <button
           className="btn-icon"
+          {...noDrag}
           style={{ width: 26, height: 26 }}
           onClick={(e) => { handleDelete(e) }}
           title="删除"
