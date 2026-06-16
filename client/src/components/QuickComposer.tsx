@@ -12,6 +12,9 @@ interface QuickComposerProps {
   projectId: string
   sectionId?: string
   onDone?: (task?: Task) => void
+  /** Called when the user backs out of an empty composer (Esc or click away). Lets a
+   *  parent that mounts the composer on demand (e.g. board column) collapse it again. */
+  onCancel?: () => void
   placeholder?: string
   autoFocus?: boolean
   defaultDueDate?: string
@@ -25,7 +28,7 @@ const REPEAT_LABELS: Record<string, string> = {
   monthly: '每月',
 }
 
-export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoFocus, defaultDueDate, collapsed, collapsedLabel }: QuickComposerProps) {
+export function QuickComposer({ projectId, sectionId, onDone, onCancel, placeholder, autoFocus, defaultDueDate, collapsed, collapsedLabel }: QuickComposerProps) {
   const [text, setText] = useState('')
   const [parsed, setParsed] = useState<ReturnType<typeof parse> | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
@@ -37,13 +40,14 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
 
   // Explicit picker overrides — once the user picks a field, it wins over NLP.
   // null means "not set, fall back to NLP parse".
-  const [manualDate, setManualDate] = useState<{ due_date: string | null; due_time: string | null; repeat: string | null } | null>(null)
+  const [manualDate, setManualDate] = useState<{ start_date: string | null; due_date: string | null; due_time: string | null; end_time: string | null; repeat: string | null } | null>(null)
   const [manualPriority, setManualPriority] = useState<number | null>(null)
   const [manualLabelIds, setManualLabelIds] = useState<string[] | null>(null)
   const [openMenu, setOpenMenu] = useState<null | 'date' | 'priority' | 'label'>(null)
   const dateRef = useRef<HTMLButtonElement>(null)
   const prioRef = useRef<HTMLButtonElement>(null)
   const labelRef = useRef<HTMLButtonElement>(null)
+  const composerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     api.getProjects().then(setProjects).catch(() => {})
@@ -55,8 +59,10 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
   }, [text, projects, labels])
 
   // Effective values: explicit pick wins, otherwise NLP parse, otherwise default.
+  const effStartDate = manualDate ? manualDate.start_date : null
   const effDueDate = manualDate ? manualDate.due_date : (parsed?.due_date ?? defaultDueDate ?? null)
   const effDueTime = manualDate ? manualDate.due_time : (parsed?.due_time ?? null)
+  const effEndTime = manualDate ? manualDate.end_time : null
   const effRepeat = manualDate ? manualDate.repeat : (parsed?.repeat ?? null)
   const effPriority = manualPriority ?? parsed?.priority ?? 4
   // For display/count: explicit ids, else NLP names
@@ -98,7 +104,9 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
       if (sectionId) body.section_id = sectionId
       if (effDueDate) body.due_date = effDueDate
       else if (defaultDueDate) body.due_date = defaultDueDate
+      if (effStartDate) body.start_date = effStartDate
       if (effDueTime) body.due_time = effDueTime
+      if (effEndTime) body.end_time = effEndTime
       if (effRepeat) body.repeat = effRepeat
 
       const task = await api.addTask(body as any)
@@ -113,10 +121,28 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
 
   const findLabel = (id: string) => labels.find((l) => l.id === id)
 
+  const isDirty = () => !!(text.trim() || manualDate || manualPriority !== null || manualLabelIds !== null)
+
   const handleCancel = () => {
-    if (text.trim() || manualDate || manualPriority !== null || manualLabelIds !== null) setShowConfirm(true)
-    else reset()
+    if (isDirty()) setShowConfirm(true)
+    else { reset(); onCancel?.() }
   }
+
+  // Collapse an empty composer when the user clicks outside it. Mirrors the Popover
+  // outside-click pattern (mousedown on document + ref containment) — more reliable
+  // than blur. Skip while a picker menu is open (it portals outside the composer) or
+  // there's unsaved input (Esc still offers the discard confirm for that case).
+  useEffect(() => {
+    if (!onCancel && !collapsed) return
+    const onDown = (e: MouseEvent) => {
+      if (!composerRef.current) return                       // only when the full composer is rendered (expanded)
+      if (composerRef.current.contains(e.target as Node)) return
+      if (openMenu || isDirty()) return
+      reset(); onCancel?.()
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [onCancel, collapsed, openMenu, text, manualDate, manualPriority, manualLabelIds])
 
   if (!expanded && collapsed) {
     return (
@@ -134,7 +160,7 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
   })
 
   return (
-    <div className="composer" style={{ margin: '0 0 16px' }}>
+    <div className="composer" ref={composerRef} style={{ margin: '0 0 16px' }}>
       {showConfirm && (
         <div className="modal-scrim" style={{ zIndex: 1000 }} onClick={e => { if (e.target === e.currentTarget) setShowConfirm(false) }}>
           <div className="modal-card" style={{ maxWidth: 320, marginTop: '20vh', padding: 20 }}>
@@ -142,7 +168,7 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>您输入的内容将不会被保存。</div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn-ghost" onClick={() => setShowConfirm(false)}>取消</button>
-              <button className="btn-primary" style={{ background: 'var(--p1)' }} onClick={reset}>放弃</button>
+              <button className="btn-primary" style={{ background: 'var(--p1)' }} onClick={() => { reset(); onCancel?.() }}>放弃</button>
             </div>
           </div>
         </div>
@@ -170,7 +196,7 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 12px 8px' }}>
         <button ref={dateRef} style={pickerActive(!!effDueDate)} onClick={() => setOpenMenu(m => m === 'date' ? null : 'date')}>
           <Icon name="calendar" size={13} />
-          {effDueDate ? DateU.human(effDueDate) + (effDueTime ? ' ' + effDueTime : '') + (effRepeat ? ' · ' + (REPEAT_LABELS[effRepeat] || effRepeat) : '') : '日期'}
+          {effDueDate ? (effStartDate && effStartDate !== effDueDate ? DateU.human(effStartDate) + '–' : '') + DateU.human(effDueDate) + (effDueTime ? ' ' + effDueTime + (effEndTime ? '–' + effEndTime : '') : '') + (effRepeat ? ' · ' + (REPEAT_LABELS[effRepeat] || effRepeat) : '') : '日期'}
         </button>
         <button ref={prioRef} style={pickerActive(effPriority < 4)} onClick={() => setOpenMenu(m => m === 'priority' ? null : 'priority')}>
           <Icon name="flag" size={13} style={{ color: effPriority < 4 ? PRIORITY_META[effPriority].color : undefined }} />
@@ -185,7 +211,7 @@ export function QuickComposer({ projectId, sectionId, onDone, placeholder, autoF
       </div>
 
       {openMenu === 'date' && (
-        <DateMenu anchorRef={dateRef} value={effDueDate} time={effDueTime} repeat={effRepeat}
+        <DateMenu anchorRef={dateRef} value={effDueDate} time={effDueTime} endTime={effEndTime} repeat={effRepeat} startDate={effStartDate} allowRange
           onPick={(r) => { setManualDate(r); setOpenMenu(null) }} onClose={() => setOpenMenu(null)} />
       )}
       {openMenu === 'priority' && (

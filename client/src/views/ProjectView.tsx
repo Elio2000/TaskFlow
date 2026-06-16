@@ -87,7 +87,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
   return (
     <ViewShell title={project.name} subtitle={viewMode === 'board' ? '看板视图' : '列表视图'} actions={actions}>
-      <QuickComposer projectId={projectId} onDone={fetch} />
+      <QuickComposer projectId={projectId} collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
 
       {viewMode === 'list' && (
         <>
@@ -102,7 +102,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
                   <button className="btn-icon" style={{ width: 24, height: 24 }} onClick={async () => { await api.deleteSection(s.id); fetch() }}><Icon name="trash" size={12} /></button>
                 </div>
                 {ts.map(t => <TaskRow key={t.id} task={t} draggable onMoveTo={(draggedId) => handleListMove(draggedId, t.id)} onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)}
-                <QuickComposer projectId={projectId} sectionId={s.id} autoFocus={false} onDone={fetch} />
+                <QuickComposer projectId={projectId} sectionId={s.id} collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
               </div>
             )
           })}
@@ -189,7 +189,7 @@ function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh }: {
         <button className="btn-icon" style={{ width: 24, height: 24 }} onClick={() => setAddingCard(true)}><Icon name="plus" size={14} /></button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, minHeight: 40, borderRadius: 10, padding: dragOver ? '4px' : '0', background: dragOver ? 'var(--bg-hover)' : 'transparent', border: dragOver ? '1.5px dashed var(--border)' : '1.5px solid transparent', transition: 'all .12s' }}>
-        {addingCard && <div className="board-card" style={{ padding: 8 }}><QuickComposer projectId={projectId} sectionId={sectionId || undefined} placeholder="任务名称…" autoFocus onDone={() => { setAddingCard(false); onRefresh() }} /></div>}
+        {addingCard && <div className="board-card" style={{ padding: 8 }}><QuickComposer projectId={projectId} sectionId={sectionId || undefined} placeholder="任务名称…" autoFocus onCancel={() => setAddingCard(false)} onDone={() => { setAddingCard(false); onRefresh() }} /></div>}
         {tasks.map(t => (<div key={t.id}>{insertBefore === t.id && dragOver && <div style={{ height: 2, borderRadius: 2, background: 'var(--accent)', margin: '0 4px' }} />}<BoardCard task={t} onOpenTask={onOpenTask} onRefresh={onRefresh} /></div>))}
         {insertBefore === 'end' && dragOver && <div style={{ height: 2, borderRadius: 2, background: 'var(--accent)', margin: '0 4px' }} />}
         {!addingCard && <button className="btn-ghost" style={{ justifyContent: 'flex-start', color: 'var(--text-tertiary)', fontSize: 13 }} onClick={() => setAddingCard(true)}><Icon name="plus" size={13} /> 添加任务</button>}

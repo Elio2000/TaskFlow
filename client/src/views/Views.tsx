@@ -85,42 +85,48 @@ function TaskGroup({ title, tasks, showProject, onOpenTask, onAIClick, onDelete,
    ==================================================== */
 export function InboxView() {
   const [tasks, setTasks] = useState<Task[]>([])
+  const [sections, setSections] = useState<Section[]>([])
   const [taskModal, setTaskModal] = useState<string | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiTask, setAiTask] = useState<Task | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
   const [filters, setFilters] = useState<DisplayFilters>({ labels: [], priority: null, completed: false, sort: 'manual' })
-  const fetch = () => api.getTasks({ project_id: 'inbox', completed: '0' }).then(setTasks)
+  const [newSec, setNewSec] = useState(false)
+  const [newSecName, setNewSecName] = useState('')
+  const fetch = async () => {
+    const [ts, secs] = await Promise.all([api.getTasks({ project_id: 'inbox', completed: '0' }), api.getSections('inbox')])
+    setTasks(ts); setSections(secs)
+  }
   useEffect(() => { fetch(); const id = setInterval(fetch, 5000); return () => clearInterval(id) }, [])
   const toggleSelect = (id: string) => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  // List reorder via unified drag util (task id travels in dataTransfer).
-  // Renumber the whole list so reordering is stable even when many tasks share
-  // the default sort_order (midpoint math alone would be a no-op then).
+  // Apply filters, then split into the unsectioned group + per-section groups (mirrors
+  // the project list view so the inbox reads like a TickTick/Todoist list).
+  const filteredTasks = applyFilters(tasks, filters)
+  const unsectioned = filteredTasks.filter(t => !t.section_id && !t.parent_id)
+  const inSection = (sid: string) => filteredTasks.filter(t => t.section_id === sid && !t.parent_id)
+
+  // Section-aware reorder / move: dropping a task onto another moves it into that task's
+  // section and renumbers that section so order is stable despite shared sort_order.
   const handleListMove = async (draggedId: string, targetId: string) => {
     if (draggedId === targetId) return
-    const dragged = filteredTasks.find(t => t.id === draggedId)
-    const ordered = filteredTasks.filter(t => t.id !== draggedId)
-    const ti = ordered.findIndex(t => t.id === targetId)
-    if (ti < 0 || !dragged) return
-    ordered.splice(ti, 0, dragged)
-    await Promise.all(ordered.map((t, i) => t.sort_order === i ? Promise.resolve(undefined as any) : api.updateTask(t.id, { sort_order: i } as any)))
+    const target = tasks.find(t => t.id === targetId)
+    const dragged = tasks.find(t => t.id === draggedId)
+    if (!target || !dragged) return
+    const sec = target.section_id || null
+    const peers = tasks.filter(t => (t.section_id || null) === sec && !t.parent_id && !t.completed && t.id !== draggedId).sort((a, b) => a.sort_order - b.sort_order)
+    const ti = peers.findIndex(t => t.id === targetId)
+    peers.splice(Math.max(0, ti), 0, dragged)
+    await Promise.all(peers.map((t, i) => api.updateTask(t.id, { section_id: sec, sort_order: i } as any)))
     fetch()
   }
 
-  // Apply filters
-  const filteredTasks = tasks.filter(t => {
-    if (!filters.completed && t.completed) return false
-    if (filters.priority && t.priority !== filters.priority) return false
-    if (filters.labels.length > 0) {
-      try {
-        const ids: string[] = JSON.parse(t.labels || '[]')
-        if (!filters.labels.some(l => ids.includes(l))) return false
-      } catch { return false }
-    }
-    return true
-  })
+  const renderRow = (t: Task) => (
+    <TaskRow key={t.id} task={t} selectable selected={selectedIds.has(t.id)} onSelect={toggleSelect}
+      draggable onMoveTo={(draggedId) => handleListMove(draggedId, t.id)}
+      onClick={() => setTaskModal(t.id)} onAIClick={(task) => { setAiTask(task); setAiOpen(true) }} onDelete={fetch} onToggle={fetch} />
+  )
 
   return (
     <ViewShell title="收件箱" subtitle={filteredTasks.length ? filteredTasks.length + ' 条任务' : '干净如新'}
@@ -139,13 +145,37 @@ export function InboxView() {
         <BoardView projectId="inbox" />
       ) : (
         <>
-          <QuickComposer projectId="inbox" placeholder="添加到收件箱… 试试「明天 p2 整理文件」" onDone={fetch} />
-          {filteredTasks.length === 0
+          <QuickComposer projectId="inbox" placeholder="添加到收件箱… 试试「明天 p2 整理文件」" collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
+          {filteredTasks.length === 0 && sections.length === 0
             ? <EmptyState icon="inbox" text="收件箱已清空" sub="处理完所有任务，真不错！" />
-            : filteredTasks.map((t) => <TaskRow key={t.id} task={t} selectable selected={selectedIds.has(t.id)} onSelect={toggleSelect}
-                draggable
-                onMoveTo={(draggedId) => handleListMove(draggedId, t.id)}
-                onClick={() => setTaskModal(t.id)} onAIClick={(task) => { setAiTask(task); setAiOpen(true) }} onDelete={fetch} onToggle={fetch} />)
+            : (
+              <>
+                {unsectioned.map(renderRow)}
+                {sections.map(s => {
+                  const ts = inSection(s.id)
+                  return (
+                    <div key={s.id} style={{ marginTop: 18 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderBottom: '1.5px solid var(--border)', paddingBottom: 5, marginBottom: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', flex: 1 }}>{s.name}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{ts.length}</span>
+                        <button className="btn-icon" style={{ width: 24, height: 24 }} onClick={async () => { await api.deleteSection(s.id); fetch() }}><Icon name="trash" size={12} /></button>
+                      </div>
+                      {ts.map(renderRow)}
+                      <QuickComposer projectId="inbox" sectionId={s.id} collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
+                    </div>
+                  )
+                })}
+                <div style={{ marginTop: 16 }}>
+                  {newSec ? (
+                    <input autoFocus value={newSecName} onChange={e => setNewSecName(e.target.value)}
+                      onKeyDown={async e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && newSecName.trim()) { await api.addSection('inbox', newSecName.trim()); setNewSecName(''); setNewSec(false); fetch() } if (e.key === 'Escape') { setNewSec(false); setNewSecName('') } }}
+                      placeholder="分区名称…" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 13.5, background: 'var(--bg-content)', color: 'var(--text-primary)', outline: 'none', width: '100%' }} />
+                  ) : (
+                    <button className="btn-ghost" style={{ color: 'var(--text-tertiary)' }} onClick={() => setNewSec(true)}><Icon name="plus" size={14} /> 添加分区</button>
+                  )}
+                </div>
+              </>
+            )
           }
         </>
       )}
@@ -179,7 +209,7 @@ export function TodayView() {
   return (
     <ViewShell title="今天" subtitle={new Date().toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' })}
       actions={<DisplayMenu filters={filters} onChange={setFilters} />}>
-      <QuickComposer projectId="inbox" defaultDueDate={DateU.today()} placeholder="添加今天的任务…" onDone={fetch} />
+      <QuickComposer projectId="inbox" defaultDueDate={DateU.today()} placeholder="添加今天的任务…" collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
       {overdue.length > 0 && <TaskGroup title="逾期" tasks={overdue} showProject onOpenTask={openTask} onAIClick={openAI} onDelete={fetch} onToggle={fetch} accent="var(--p1)" />}
       {todayTasks.length > 0
         ? <TaskGroup title="今天" tasks={todayTasks} showProject onOpenTask={openTask} onAIClick={openAI} onDelete={fetch} onToggle={fetch} />
@@ -236,7 +266,7 @@ export function UpcomingView() {
             ? <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', padding: '4px 0 4px 4px' }}>暂无任务</div>
             : day.dayTasks.map((t) => <TaskRow key={t.id} task={t} draggable showProject onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)
           }
-          <QuickComposer projectId="inbox" defaultDueDate={day.date} placeholder="+ 为这天添加任务" autoFocus={false} onDone={fetch} />
+          <QuickComposer projectId="inbox" defaultDueDate={day.date} placeholder="为这天添加任务…" collapsed collapsedLabel="为这天添加任务" autoFocus onDone={fetch} />
         </div>
       ))}
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
@@ -318,7 +348,7 @@ function BoardCol({ section, tasks, onOpenTask, projectId, onRefresh }: {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, minHeight: 40, borderRadius: 10, padding: dragOver ? '4px' : '0', background: dragOver ? 'var(--bg-hover)' : 'transparent', border: dragOver ? '1.5px dashed var(--border)' : '1.5px solid transparent', transition: 'all .12s' }}>
         {addingCard && (
           <div className="board-card" style={{ padding: 8 }}>
-            <QuickComposer projectId={projectId} sectionId={sectionId || undefined} placeholder="任务名称…" autoFocus onDone={() => { setAddingCard(false); onRefresh() }} />
+            <QuickComposer projectId={projectId} sectionId={sectionId || undefined} placeholder="任务名称…" autoFocus onCancel={() => setAddingCard(false)} onDone={() => { setAddingCard(false); onRefresh() }} />
           </div>
         )}
         {tasks.map((t) => (
@@ -363,7 +393,7 @@ function BoardView({ projectId }: { projectId: string }) {
 
   return (
     <ViewShell title={project.name} subtitle="看板视图">
-      <QuickComposer projectId={projectId} onDone={fetch} />
+      <QuickComposer projectId={projectId} collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
       <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 16, alignItems: 'flex-start' }}>
         {unsectioned.length > 0 && (
           <BoardCol section={null} tasks={unsectioned} onOpenTask={(t) => setTaskModal(t.id)} projectId={projectId} onRefresh={fetch} />

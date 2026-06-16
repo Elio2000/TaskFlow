@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   yToMin, computeMove, computeResizeTop, computeResizeBottom,
-  dateFromX, minToTime, timeToMin,
+  dateFromX, minToTime, timeToMin, taskOccursOn,
+  computeBlockMovePatch, computeDayDropPatch, computeSlotDropPatch,
 } from "../client/src/utils/calendarGeom.ts";
 
 // HOUR_PX = 56 in the app; gridTop = 0 for these tests.
@@ -53,4 +54,78 @@ test("minToTime / timeToMin round-trip", () => {
   assert.equal(timeToMin("14:00"), 840);
   assert.equal(timeToMin(""), 0);
   assert.equal(timeToMin(null), 0);
+});
+
+test("taskOccursOn: range with both dates is inclusive on both ends", () => {
+  assert.equal(taskOccursOn("2026-06-12", "2026-06-18", "2026-06-12"), true);  // start day
+  assert.equal(taskOccursOn("2026-06-12", "2026-06-18", "2026-06-15"), true);  // middle
+  assert.equal(taskOccursOn("2026-06-12", "2026-06-18", "2026-06-18"), true);  // due day
+  assert.equal(taskOccursOn("2026-06-12", "2026-06-18", "2026-06-11"), false); // day before
+  assert.equal(taskOccursOn("2026-06-12", "2026-06-18", "2026-06-19"), false); // day after
+});
+
+test("taskOccursOn: same start and due = single day", () => {
+  assert.equal(taskOccursOn("2026-06-15", "2026-06-15", "2026-06-15"), true);
+  assert.equal(taskOccursOn("2026-06-15", "2026-06-15", "2026-06-16"), false);
+});
+
+test("taskOccursOn: reversed dates (start > due) still resolves the span", () => {
+  assert.equal(taskOccursOn("2026-06-18", "2026-06-12", "2026-06-15"), true);
+  assert.equal(taskOccursOn("2026-06-18", "2026-06-12", "2026-06-20"), false);
+});
+
+test("taskOccursOn: only due date = that single day", () => {
+  assert.equal(taskOccursOn(null, "2026-06-18", "2026-06-18"), true);
+  assert.equal(taskOccursOn("", "2026-06-18", "2026-06-17"), false);
+  assert.equal(taskOccursOn(undefined, "2026-06-18", "2026-06-19"), false);
+});
+
+test("taskOccursOn: only start date = that single day", () => {
+  assert.equal(taskOccursOn("2026-06-16", null, "2026-06-16"), true);
+  assert.equal(taskOccursOn("2026-06-16", "", "2026-06-17"), false);
+});
+
+test("taskOccursOn: no dates never occurs", () => {
+  assert.equal(taskOccursOn(null, null, "2026-06-16"), false);
+  assert.equal(taskOccursOn("", "", "2026-06-16"), false);
+  assert.equal(taskOccursOn(undefined, undefined, "2026-06-16"), false);
+});
+
+test("computeBlockMovePatch: single-day retargets due_date and clears start_date", () => {
+  assert.deepEqual(
+    computeBlockMovePatch({ start_date: null, due_date: "2026-06-16" }, "2026-06-16", "2026-06-18", 540, 600),
+    { start_date: null, due_date: "2026-06-18", due_time: "09:00", end_time: "10:00" },
+  );
+});
+
+test("computeBlockMovePatch: multi-day vertical move (same day) keeps range, only time changes", () => {
+  assert.deepEqual(
+    computeBlockMovePatch({ start_date: "2026-06-16", due_date: "2026-06-19" }, "2026-06-18", "2026-06-18", 810, 1050),
+    { start_date: "2026-06-16", due_date: "2026-06-19", due_time: "13:30", end_time: "17:30" },
+  );
+});
+
+test("computeBlockMovePatch: multi-day cross-day move shifts the whole range by the delta", () => {
+  assert.deepEqual(
+    computeBlockMovePatch({ start_date: "2026-06-16", due_date: "2026-06-19" }, "2026-06-18", "2026-06-20", 540, 600),
+    { start_date: "2026-06-18", due_date: "2026-06-21", due_time: "09:00", end_time: "10:00" },
+  );
+});
+
+test("computeBlockMovePatch: shift crosses a month boundary correctly", () => {
+  assert.deepEqual(
+    computeBlockMovePatch({ start_date: "2026-06-29", due_date: "2026-06-30" }, "2026-06-29", "2026-07-01", 540, 600),
+    { start_date: "2026-07-01", due_date: "2026-07-02", due_time: "09:00", end_time: "10:00" },
+  );
+});
+
+test("computeDayDropPatch: multi-day moves range to start at drop; single-day & start-only normalize", () => {
+  assert.deepEqual(computeDayDropPatch({ start_date: "2026-06-16", due_date: "2026-06-19" }, "2026-06-20"), { start_date: "2026-06-20", due_date: "2026-06-23" });
+  assert.deepEqual(computeDayDropPatch({ start_date: null, due_date: "2026-06-16" }, "2026-06-20"), { start_date: null, due_date: "2026-06-20" });
+  assert.deepEqual(computeDayDropPatch({ start_date: "2026-06-16", due_date: null }, "2026-06-20"), { start_date: null, due_date: "2026-06-20" });
+});
+
+test("computeSlotDropPatch: multi-day keeps range (time only); single-day sets day + time", () => {
+  assert.deepEqual(computeSlotDropPatch({ start_date: "2026-06-16", due_date: "2026-06-19" }, "2026-06-20", 540), { due_time: "09:00", end_time: "10:00" });
+  assert.deepEqual(computeSlotDropPatch({ start_date: null, due_date: null }, "2026-06-20", 540), { start_date: null, due_date: "2026-06-20", due_time: "09:00", end_time: "10:00" });
 });

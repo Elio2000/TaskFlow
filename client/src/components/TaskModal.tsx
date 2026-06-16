@@ -17,6 +17,8 @@ const FIELD_LABELS: Record<string, string> = {
   labels: '标签', project_id: '项目', section_id: '分区', repeat: '重复'
 }
 
+const REPEAT_LABELS: Record<string, string> = { daily: '每天', weekly: '每周', monthly: '每月' }
+
 interface TaskModalProps {
   taskId: string
   onClose: () => void
@@ -38,6 +40,7 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
   const titleRef = useRef<HTMLInputElement | null>(null)
 
   const dp = usePopover()
+  const sp = usePopover()   // start-date picker
   const pp = usePopover()
   const lp = usePopover()
   const projp = usePopover()
@@ -368,20 +371,27 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
             {/* Start date */}
             <PropRow label="开始" icon="upcoming">
               <button
+                ref={sp.ref}
                 className="btn-ghost"
                 style={{ fontSize: 13, padding: '3px 7px' }}
-                onClick={() => {
-                  const v = window.prompt(
-                    '开始日期 (YYYY-MM-DD)，留空清除：',
-                    task.start_date || '',
-                  )
-                  if (v !== null) {
-                    save({ start_date: v.trim() || null })
-                  }
-                }}
+                onClick={sp.toggle}
               >
                 {task.start_date ? DateU.human(task.start_date) : '无（单天）'}
               </button>
+              {sp.open && (
+                <DateMenu
+                  anchorRef={sp.ref}
+                  value={task.start_date}
+                  time={null}
+                  repeat={null}
+                  dateOnly
+                  onPick={(v) => {
+                    save({ start_date: v.due_date || null })
+                    sp.close()
+                  }}
+                  onClose={sp.close}
+                />
+              )}
             </PropRow>
 
             {/* Due date */}
@@ -402,17 +412,21 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
               >
                 {task.due_date
                   ? DateU.human(task.due_date) +
-                    (task.due_time ? ' ' + task.due_time : '')
-                  : '无日期'}
+                    (task.due_time ? ' ' + task.due_time + (task.end_time ? '–' + task.end_time : '') : '') +
+                    (task.repeat ? ' · ' + (REPEAT_LABELS[task.repeat] || task.repeat) : '')
+                  : (task.repeat ? (REPEAT_LABELS[task.repeat] || task.repeat) : '无日期')}
               </button>
               {dp.open && (
                 <DateMenu
                   anchorRef={dp.ref}
                   value={task.due_date}
                   time={task.due_time}
+                  endTime={task.end_time}
                   repeat={task.repeat}
                   onPick={(v) => {
-                    save(v)
+                    // Don't pass start_date here — the separate 开始 row owns it, so a
+                    // single-mode due-date edit must not null out an existing start_date.
+                    save({ due_date: v.due_date, due_time: v.due_time, end_time: v.end_time, repeat: v.repeat })
                     dp.close()
                   }}
                   onClose={dp.close}

@@ -5,6 +5,7 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --bg-app: #f7f5f1;
   --bg-content: #fdfcfa;
   --bg-card: #ffffff;
@@ -32,6 +33,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg-app: #1d1c1a;
   --bg-content: #242320;
   --bg-card: #2c2b27;
@@ -247,3 +249,7 @@ input::placeholder, textarea::placeholder { color: var(--text-tertiary); }
 
 .fade-up { animation: fade-up .2s ease-out; }
 @keyframes fade-up { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+/* Native time inputs in DateMenu — keep the picker indicator subtle and on-theme. */
+.time-input::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .55; }
+.time-input::-webkit-calendar-picker-indicator:hover { opacity: 1; }

@@ -3,7 +3,7 @@ import { api } from '../api'
 import type { Task } from '../api'
 import { DateU } from '../utils/date'
 import { dragSource, draggedTaskId } from '../utils/drag'
-import { yToMin, computeMove, computeResizeTop, computeResizeBottom, minToTime, timeToMin } from '../utils/calendarGeom'
+import { yToMin, computeMove, computeResizeTop, computeResizeBottom, minToTime, timeToMin, taskOccursOn, computeBlockMovePatch, computeDayDropPatch, computeSlotDropPatch } from '../utils/calendarGeom'
 import { Icon } from '../icons'
 import { TaskRow } from '../components/TaskRow'
 import { TaskModal } from '../components/TaskModal'
@@ -20,11 +20,6 @@ function MonthView({ year, month, tasks, today, selected, onSelect, onOpenTask, 
 }) {
   const [dragOver, setDragOver] = useState<string | null>(null)
   const grid = DateU.monthGrid(year, month)
-  const tbd: Record<string, Task[]> = {}
-  tasks.filter(t => !t.completed && !t.parent_id && t.due_date).forEach(t => {
-    if (!tbd[t.due_date!]) tbd[t.due_date!] = []
-    tbd[t.due_date!].push(t)
-  })
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 4 }}>
@@ -32,14 +27,14 @@ function MonthView({ year, month, tasks, today, selected, onSelect, onOpenTask, 
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
         {grid.map(c => {
-          const ts = tbd[c.date] || []
+          const ts = tasks.filter(t => !t.completed && !t.parent_id && taskOccursOn(t.start_date, t.due_date, c.date))
           const isSel = c.date === selected, isToday = c.date === today
           return (
             <div key={c.date} onClick={() => onSelect(c.date)}
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(c.date) }}
               onDragLeave={(e) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDragOver(d => d === c.date ? null : d) }}
               onDrop={(e) => { e.preventDefault(); setDragOver(null); const id = draggedTaskId(e); if (id) onMoveTask(id, c.date) }}
-              style={{ minHeight:70,borderRadius:8,padding:'5px 6px',cursor:'pointer',background:dragOver===c.date?'var(--accent-soft)':isSel?'var(--accent-soft)':isToday?'var(--bg-hover)':c.inMonth?'var(--bg-card)':'transparent',border:(isSel||dragOver===c.date)?'1.5px solid var(--accent)':'1px solid var(--border-soft)',opacity:c.inMonth?1:.4 }}>
+              style={{ height:96,borderRadius:8,padding:'5px 6px',cursor:'pointer',background:dragOver===c.date?'var(--accent-soft)':isSel?'var(--accent-soft)':isToday?'var(--bg-hover)':c.inMonth?'var(--bg-card)':'transparent',border:(isSel||dragOver===c.date)?'1.5px solid var(--accent)':'1px solid var(--border-soft)',opacity:c.inMonth?1:.4,overflow:'hidden',display:'flex',flexDirection:'column' }}>
               <div style={{ fontSize:12.5,fontWeight:isToday||isSel?700:400,color:isToday?'var(--accent-text)':isSel?'var(--accent-text)':'var(--text-primary)',marginBottom:3,textAlign:'right' }}>{c.day}</div>
               {ts.slice(0,3).map(t => (
                 <div key={t.id} {...dragSource(t.id)} onClick={e=>{e.stopPropagation();onOpenTask(t.id)}} style={{ fontSize:11,padding:'1px 4px',borderRadius:3,marginBottom:1,background:'var(--accent-soft)',color:'var(--accent-text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',cursor:'grab' }}>{t.title}</div>
@@ -119,7 +114,7 @@ function DayCol({ date, tasks, onSlotClick, onOpenTask, onDropTask, drag, onStar
 function TimeGrid({ dates, tasks, onSlotClick, onOpenTask, onDropTask, onCommitBlock }: {
   dates: string[]; tasks: Task[]; onSlotClick: (date: string, startMin: number, endMin: number) => void; onOpenTask: (id: string) => void;
   onDropTask: (taskId: string, date: string, minutes: number) => void;
-  onCommitBlock: (taskId: string, date: string, startMin: number, endMin: number) => void;
+  onCommitBlock: (taskId: string, date: string, startMin: number, endMin: number, sourceDate: string) => void;
 }) {
   const [drag, setDrag] = useState<BlockDrag | null>(null)
 
@@ -152,7 +147,7 @@ function TimeGrid({ dates, tasks, onSlotClick, onOpenTask, onDropTask, onCommitB
     const onUp = () => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
-      if (moved) setDrag(cur => { if (cur) onCommitBlock(cur.task.id, cur.preview.date, cur.preview.startMin, cur.preview.endMin); return null })
+      if (moved) setDrag(cur => { if (cur) onCommitBlock(cur.task.id, cur.preview.date, cur.preview.startMin, cur.preview.endMin, date); return null })
       else { setDrag(null); onOpenTask(task.id) }
     }
     document.addEventListener('pointermove', onMove)
@@ -165,7 +160,7 @@ function TimeGrid({ dates, tasks, onSlotClick, onOpenTask, onDropTask, onCommitB
       <div style={{ width:48,flexShrink:0 }}>
         {Array.from({length:24},(_,h)=><div key={h} style={{ height:HOUR_PX,paddingRight:8,fontSize:11,color:'var(--text-tertiary)',textAlign:'right' }}>{h===0?'':`${h}:00`}</div>)}
       </div>
-      {dates.map(date=><DayCol key={date} date={date} tasks={tasks.filter(t=>t.due_date===date&&!t.completed&&!t.parent_id)} onSlotClick={onSlotClick} onOpenTask={onOpenTask} onDropTask={onDropTask} drag={drag} onStartBlockDrag={startBlockDrag} />)}
+      {dates.map(date=><DayCol key={date} date={date} tasks={tasks.filter(t=>taskOccursOn(t.start_date,t.due_date,date)&&!t.completed&&!t.parent_id)} onSlotClick={onSlotClick} onOpenTask={onOpenTask} onDropTask={onDropTask} drag={drag} onStartBlockDrag={startBlockDrag} />)}
     </div>
   )
 }
@@ -199,6 +194,7 @@ function titleFor(mode: CalMode, cursor: string): string {
 export function CalendarView() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [mode, setMode] = useState<CalMode>('month')
+  const [panelOpen, setPanelOpen] = useState(true)   // month view: show/hide the selected-day panel
   const [cursor, setCursor] = useState(DateU.today())
   const [selected, setSelected] = useState(DateU.today())
   const [taskModal, setTaskModal] = useState<string|null>(null)
@@ -211,18 +207,19 @@ export function CalendarView() {
 
   const today = DateU.today()
   const navigate = (dir:1|-1) => { if (mode==='month') setCursor(DateU.addMonths(cursor,dir)); else setCursor(DateU.addDays(cursor,dir*7)) }
-  // Drag a task onto a calendar day → set its due_date (due_time preserved)
-  const handleMoveToDate = async (taskId: string, date: string) => { await api.updateTask(taskId, { due_date: date } as any); fetch() }
-  // Drop an all-day task onto the week grid → give it a concrete time (default 60-min block)
-  const handleDropToSlot = async (taskId: string, date: string, minutes: number) => {
-    await api.updateTask(taskId, { due_date: date, due_time: minToTime(minutes), end_time: minToTime(Math.min(24 * 60, minutes + 60)) } as any); fetch()
-  }
-  // Commit a pointer move/resize of a timed block (week view)
-  const handleCommitBlock = async (taskId: string, date: string, startMin: number, endMin: number) => {
-    await api.updateTask(taskId, { due_date: date, due_time: minToTime(startMin), end_time: minToTime(endMin) } as any); fetch()
+  // Move handlers delegate to the pure patch builders so multi-day (start≠due) tasks
+  // keep their range instead of collapsing to the dropped day. (calendarGeom, unit-tested)
+  const taskDates = (taskId: string) => { const t = tasks.find(x => x.id === taskId); return { start_date: t?.start_date ?? null, due_date: t?.due_date ?? null } }
+  // Drag a task onto a calendar day (month / upcoming)
+  const handleMoveToDate = async (taskId: string, date: string) => { await api.updateTask(taskId, computeDayDropPatch(taskDates(taskId), date) as any); fetch() }
+  // Drop an all-day task onto the week grid → give it a concrete time
+  const handleDropToSlot = async (taskId: string, date: string, minutes: number) => { await api.updateTask(taskId, computeSlotDropPatch(taskDates(taskId), date, minutes) as any); fetch() }
+  // Commit a pointer move/resize of a timed block (week view); sourceDate = the column it was grabbed from
+  const handleCommitBlock = async (taskId: string, date: string, startMin: number, endMin: number, sourceDate: string) => {
+    await api.updateTask(taskId, computeBlockMovePatch(taskDates(taskId), sourceDate, date, startMin, endMin) as any); fetch()
   }
   const weekDates = DateU.weekDates(cursor)
-  const dayTasks = tasks.filter(t=>t.due_date===selected&&!t.parent_id&&!t.completed)
+  const dayTasks = tasks.filter(t=>taskOccursOn(t.start_date,t.due_date,selected)&&!t.parent_id&&!t.completed)
 
   return (
     <div className="fade-up" style={{ display:'flex',flexDirection:'column',minHeight:'100%',background:'var(--bg-content)' }}>
@@ -232,6 +229,11 @@ export function CalendarView() {
           <button className="btn-ghost" onClick={()=>{setCursor(today);setSelected(today)}} style={{ fontSize:12.5 }}>今天</button>
           <button className="btn-ghost" onClick={()=>navigate(1)}><Icon name="chevronRight" size={15}/></button>
           <span style={{ flex:1,fontSize:16,fontWeight:700 }}>{titleFor(mode,cursor)}</span>
+          {mode==='month' && (
+            <button className="btn-ghost" title={panelOpen?'隐藏当日面板':'显示当日面板'} onClick={()=>setPanelOpen(o=>!o)} style={{ fontSize:12,padding:'3px 8px' }}>
+              <Icon name="sidebar" size={15}/>
+            </button>
+          )}
           <div style={{ display:'flex',gap:2,background:'var(--bg-inset)',borderRadius:8,padding:3 }}>
             {(['month','week'] as CalMode[]).map(m=>(
               <button key={m} className={mode===m?'btn-primary':'btn-ghost'} style={{ fontSize:12,padding:'3px 10px' }} onClick={()=>setMode(m)}>{{month:'月',week:'周'}[m]}</button>
@@ -241,15 +243,20 @@ export function CalendarView() {
       </div>
 
       {mode==='month' && (
-        <div style={{ padding:'10px 24px 24px',display:'grid',gridTemplateColumns:'1fr 300px',gap:24,flex:1,overflow:'hidden' }}>
+        <div style={{ padding:'10px 24px 24px',display:'grid',gridTemplateColumns:panelOpen?'1fr 300px':'1fr',gap:24,flex:1,overflow:'hidden' }}>
           <div style={{ overflowY:'auto' }}>
             <MonthView year={new Date(cursor+'T00:00:00').getFullYear()} month={new Date(cursor+'T00:00:00').getMonth()} tasks={tasks} today={today} selected={selected} onSelect={setSelected} onOpenTask={setTaskModal} onMoveTask={handleMoveToDate}/>
           </div>
-          <div style={{ borderLeft:'1px solid var(--border-soft)',paddingLeft:20,overflowY:'auto' }}>
-            <div style={{ fontWeight:600,fontSize:14.5,marginBottom:10,color:selected===today?'var(--accent-text)':'var(--text-primary)' }}>{DateU.human(selected)} <span style={{ fontWeight:400,fontSize:12.5,color:'var(--text-tertiary)' }}>({dayTasks.length} 条)</span></div>
-            <QuickComposer projectId="inbox" defaultDueDate={selected} placeholder="为这天添加任务…" autoFocus={false} onDone={fetch}/>
-            {dayTasks.length===0 ? <div style={{ fontSize:13,color:'var(--text-tertiary)',paddingTop:8 }}>无任务</div> : dayTasks.map(t=><TaskRow key={t.id} task={t} draggable showProject onClick={()=>setTaskModal(t.id)} onAIClick={task=>{setAiTask(task);setAiOpen(true)}} onDelete={fetch} onToggle={fetch}/>)}
-          </div>
+          {panelOpen && (
+            <div style={{ borderLeft:'1px solid var(--border-soft)',paddingLeft:20,overflowY:'auto' }}>
+              <div style={{ display:'flex',alignItems:'center',gap:6,marginBottom:10 }}>
+                <span style={{ fontWeight:600,fontSize:14.5,flex:1,color:selected===today?'var(--accent-text)':'var(--text-primary)' }}>{DateU.human(selected)} <span style={{ fontWeight:400,fontSize:12.5,color:'var(--text-tertiary)' }}>({dayTasks.length} 条)</span></span>
+                <button className="btn-icon" title="收起面板" style={{ width:24,height:24 }} onClick={()=>setPanelOpen(false)}><Icon name="chevronRight" size={15}/></button>
+              </div>
+              <QuickComposer projectId="inbox" defaultDueDate={selected} placeholder="为这天添加任务…" collapsed collapsedLabel="为这天添加任务" onDone={fetch}/>
+              {dayTasks.length===0 ? <div style={{ fontSize:13,color:'var(--text-tertiary)',paddingTop:8 }}>无任务</div> : dayTasks.map(t=><TaskRow key={t.id} task={t} draggable showProject onClick={()=>setTaskModal(t.id)} onAIClick={task=>{setAiTask(task);setAiOpen(true)}} onDelete={fetch} onToggle={fetch}/>)}
+            </div>
+          )}
         </div>
       )}
 

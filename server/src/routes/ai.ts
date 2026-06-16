@@ -19,6 +19,29 @@ const PROPOSAL_PROTOCOL = `
 [{"op":"create","title":"复习线性代数第3章","due_date":"2026-06-15","due_time":"14:00","priority":2}]
 \`\`\``
 
+// Clarifying-question protocol — lets the AI behave like a real assistant: when the
+// user wants to plan/create tasks but key details are ambiguous (time of day, the
+// person/object, online vs offline, duration, deadline…), it asks a few option-based
+// questions FIRST instead of guessing. Mirrors PROPOSAL_PROTOCOL: the model emits a
+// ```questions``` block, the server parses it into the `done` event, and the client
+// renders a QuestionCard. The user picks options, which compose into a follow-up
+// message that then yields accurate proposals.
+const QUESTION_PROTOCOL = `
+
+## 智能反问协议（重要）
+当用户想创建 / 安排任务，但**关键信息不明确**（例如：具体时间点、对象是谁、线上还是线下、时长、截止日期等），不要自己瞎猜、也不要在同一条里直接给 proposals。请**先反问澄清**：在消息末尾附上一个 questions 代码块（三个反引号加 questions 语言标记），块内为 JSON 数组，每项为一个带选项的问题：
+- 格式：{"q":"问题文本","options":["选项1","选项2","选项3"]}
+- 每题 2-4 个选项；**不要**自己加「其他」，前端会自动补一个「其他」自由输入框。
+- 一次最多问 1-3 个最关键的问题，别问太多。
+判断标准：
+- 信息**已足够明确**（如「明天下午3点开会1小时」时间对象都清楚）→ 直接给 proposals，**不要**反问。
+- 信息**模糊**（如「帮我安排健身」「给朋友买礼物」没说时间/对象/方式）→ 先给 questions，**这一条不要**同时给 proposals。
+示例（用户说"帮我安排健身和给朋友买礼物"）：
+我先确认几个细节，好帮你安排得更准：
+\`\`\`questions
+[{"q":"你一般什么时间段健身？","options":["早上","中午","晚上"]},{"q":"给哪位朋友买礼物？","options":["最好的朋友","普通朋友","家人"]},{"q":"打算线上买还是线下买？","options":["线上","线下"]}]
+\`\`\``
+
 export function aiRoutes(): Router {
   const router = Router()
 
@@ -91,6 +114,7 @@ export function aiRoutes(): Router {
     const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     systemPrompt += `\n\n## 当前时间\n今天是 ${dateStr}（周${wd}）。所有相对日期（今天/明天/本周等）以此为基准。`
     systemPrompt += PROPOSAL_PROTOCOL
+    systemPrompt += QUESTION_PROTOCOL
 
     // Build conversation history if conv_id provided
     const messages: { role: string; content: string }[] = [
@@ -174,16 +198,22 @@ export function aiRoutes(): Router {
         }
       }
 
-      // Parse proposals from fullContent only
+      // Parse proposals + clarifying questions from fullContent
       let proposals = null
+      let questions = null
       let cleanContent = fullContent
       const propMatch = fullContent.match(/```proposals\s*([\s\S]*?)```/)
       if (propMatch) {
         try { proposals = JSON.parse(propMatch[1]) } catch {}
-        cleanContent = fullContent.replace(/```proposals[\s\S]*?```/, '').trim()
+        cleanContent = cleanContent.replace(/```proposals[\s\S]*?```/, '').trim()
+      }
+      const qMatch = fullContent.match(/```questions\s*([\s\S]*?)```/)
+      if (qMatch) {
+        try { questions = JSON.parse(qMatch[1]) } catch {}
+        cleanContent = cleanContent.replace(/```questions[\s\S]*?```/, '').trim()
       }
 
-      res.write(`event: done\ndata: ${JSON.stringify({ content: cleanContent, reasoning_content: fullReasoning, proposals })}\n\n`)
+      res.write(`event: done\ndata: ${JSON.stringify({ content: cleanContent, reasoning_content: fullReasoning, proposals, questions })}\n\n`)
       res.end()
     } catch (err: any) {
       res.write(`event: error\ndata: ${JSON.stringify({ error: err.message || 'Unknown error' })}\n\n`)
