@@ -106,6 +106,13 @@ export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onTog
     { id: 'upcoming', label: '即将到来', icon: 'upcoming' },
     { id: 'calendar', label: '日历', icon: 'calendar' },
   ]
+  const renderNav = (n: any) => (
+    <button key={n.id} className={'side-item' + (route.view === n.id ? ' is-active' : '')} onClick={() => setRoute({ view: n.id })}>
+      <Icon name={n.icon} size={16} style={{ flex: 'none' }} />
+      {n.label}
+      {n.count != null && n.count > 0 && <span className="count">{n.count}</span>}
+    </button>
+  )
 
   const createProject = async () => {
     if (!newProjName.trim()) { setAddingProject(false); return }
@@ -142,13 +149,9 @@ export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onTog
       </div>
 
       <div style={{ padding: '0 8px', marginBottom: 12 }}>
-        {navItems.map((n) => (
-          <button key={n.id} className={'side-item' + (route.view === n.id ? ' is-active' : '')} onClick={() => setRoute({ view: n.id })}>
-            <Icon name={n.icon} size={16} style={{ flex: 'none' }} />
-            {n.label}
-            {n.count != null && n.count > 0 && <span className="count">{n.count}</span>}
-          </button>
-        ))}
+        {navItems.slice(0, 2).map(renderNav)}
+        <CyclesSection route={route} setRoute={setRoute} />
+        {navItems.slice(2).map(renderNav)}
       </div>
 
       <div style={{ padding: '0 8px', flex: 1 }}>
@@ -186,7 +189,6 @@ export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onTog
             </div>
           </div>
         )}
-        <CyclesSection route={route} setRoute={setRoute} />
         <LabelsSection route={route} setRoute={setRoute} />
       </div>
 
