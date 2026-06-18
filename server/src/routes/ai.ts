@@ -54,7 +54,9 @@ export function aiRoutes(): Router {
 
     // Read config from env
     const apiKey = req.body.apiKey  // BYOK-only: key must be supplied per request; no server fallback key
-    const baseUrl = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
+    // BYOK provider is chosen on the client; it sends the OpenAI-compatible baseUrl per request.
+    // Server stays provider-agnostic: just trust baseUrl (fallback to env/DeepSeek), strip trailing slash.
+    const baseUrl = (req.body.baseUrl || process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/+$/, '')
     const model = req.body.model || process.env.AI_PLANNER_MODEL || 'deepseek-chat'
 
     if (!apiKey) {
@@ -140,7 +142,9 @@ export function aiRoutes(): Router {
     res.setHeader('Connection', 'keep-alive')
 
     try {
-      const thinkingType = process.env.AI_PLANNER_THINKING === 'enabled' ? 'enabled' : 'disabled'
+      // `thinking` is a DeepSeek-specific param; other OpenAI-compatible providers (Kimi/Qwen/
+      // Ollama/…) reject unknown fields, so omit it entirely unless explicitly enabled via env.
+      const wantThinking = process.env.AI_PLANNER_THINKING === 'enabled'
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -151,7 +155,7 @@ export function aiRoutes(): Router {
           model,
           messages,
           stream: true,
-          thinking: { type: thinkingType },
+          ...(wantThinking ? { thinking: { type: 'enabled' } } : {}),
         }),
       })
 
