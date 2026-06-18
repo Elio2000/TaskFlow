@@ -34,7 +34,7 @@ Implemented in Elio Lite now:
 - Timeline/Gantt-style monthly project view
 - Today schedule table
 - Detail drawer
-- AI Teacher creates work items
+- AI 助手 creates work items
 - Markdown memory through `agent.md` and `data/memory`
 - AI chat Markdown rendering
 - Slash commands: `/compact`, view navigation, and `/new-thread`

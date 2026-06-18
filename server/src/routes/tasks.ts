@@ -60,13 +60,13 @@ export function taskRoutes(): Router {
       sortOrder = (row?.m ?? 0) + 1
     }
 
-    req.db.prepare(`INSERT INTO tasks (id,project_id,section_id,parent_id,title,description,start_date,due_date,due_time,end_time,repeat,priority,labels,reminder,completed,completed_at,sort_order,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    req.db.prepare(`INSERT INTO tasks (id,project_id,section_id,parent_id,title,description,start_date,due_date,due_time,end_time,repeat,priority,labels,reminder,completed,completed_at,in_sprint,sort_order,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       id, body.project_id || 'inbox', body.section_id || null, body.parent_id || null,
       body.title || '', body.description || '', body.start_date || null, body.due_date || null,
       body.due_time || null, body.end_time || null, body.repeat || null, body.priority ?? 4,
       normalizeLabels(body.labels),
-      body.reminder || null, body.completed ?? 0, null, sortOrder, t, t
+      body.reminder || null, body.completed ?? 0, null, body.in_sprint ?? 0, sortOrder, t, t
     )
 
     const task = req.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id)
@@ -117,7 +117,7 @@ export function taskRoutes(): Router {
     const params: any[] = [now()]
     const changedFields: string[] = []
 
-    const fields = ['project_id', 'section_id', 'parent_id', 'title', 'description', 'start_date', 'due_date', 'due_time', 'end_time', 'repeat', 'priority', 'labels', 'reminder', 'completed', 'completed_at', 'sort_order']
+    const fields = ['project_id', 'section_id', 'parent_id', 'title', 'description', 'start_date', 'due_date', 'due_time', 'end_time', 'repeat', 'priority', 'labels', 'reminder', 'completed', 'completed_at', 'in_sprint', 'sort_order']
     for (const f of fields) {
       if (f in body) {
         sets.push(`${f} = ?`)

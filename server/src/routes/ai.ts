@@ -62,7 +62,7 @@ export function aiRoutes(): Router {
     }
 
     // Build system prompt
-    let systemPrompt = '你是一个智能任务助手。用中文回复，简洁有力。'
+    let systemPrompt = '你是 TaskFlow 的 AI 助手——一个专注「任务规划与时间分配」的智能体。你的职责：把用户的目标拆成可执行的任务、安排合理的时间与截止日期、识别冲突与遗漏。用中文回复，简洁有力，多给可直接采纳的具体建议。'
 
     // Load agent rules from DB if available
     try {

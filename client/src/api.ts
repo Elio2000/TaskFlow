@@ -28,7 +28,7 @@ export interface Task {
   title: string; description: string;
   start_date: string | null; due_date: string | null; due_time: string | null; end_time: string | null;
   repeat: string | null; priority: number; labels: string; reminder: string | null;
-  completed: number; completed_at: string | null;
+  completed: number; completed_at: string | null; in_sprint?: number;
   sort_order: number; created_at: string; updated_at: string;
 }
 

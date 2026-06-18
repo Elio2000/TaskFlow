@@ -53,6 +53,7 @@ export function initDB(): Database.Database {
       reminder TEXT,
       completed INTEGER NOT NULL DEFAULT 0,
       completed_at TEXT,
+      in_sprint INTEGER NOT NULL DEFAULT 0,
       sort_order REAL NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -133,6 +134,12 @@ export function initDB(): Database.Database {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
   `)
+
+  // Migration: add tasks.in_sprint to existing DBs (CREATE TABLE IF NOT EXISTS won't).
+  const taskCols = db.prepare('PRAGMA table_info(tasks)').all() as any[]
+  if (!taskCols.some((c: any) => c.name === 'in_sprint')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN in_sprint INTEGER NOT NULL DEFAULT 0')
+  }
 
   // Repair bad labels data
   function repairLabels(value: string): string {

@@ -7,7 +7,7 @@ import { TaskModal } from './components/TaskModal'
 import { AIPanel } from './ai/AIPanel'
 import { TodayView, InboxView, UpcomingView, CalendarView } from './views/Views'
 import { ProjectView } from './views/ProjectView'
-import { CycleView } from './views/CycleView'
+import { SprintView } from './views/SprintView'
 import { LabelView } from './views/LabelView'
 import { Icon } from './icons'
 import './style.css'
@@ -86,7 +86,7 @@ export default function App() {
       case 'upcoming': return <UpcomingView />
       case 'calendar': return <CalendarView />
       case 'project': return <ProjectView projectId={route.projectId || 'inbox'} />
-      case 'cycle': return <CycleView cycleId={route.projectId || ''} />
+      case 'sprint': return <SprintView />
       case 'label': return <LabelView labelId={route.projectId || ''} />
       default: return <TodayView />
     }

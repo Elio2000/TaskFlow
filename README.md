@@ -1,138 +1,73 @@
-# AI Planner Lite
+# TaskFlow
 
-个人使用的轻量 AI 任务拆解老师。
+> 本地优先、单人使用的 AI 任务规划工具。无需登录、无需云端，数据全在你自己的机器上。
 
-特点：
+TaskFlow 把「待办清单」和「会规划的 AI 助手」放在一起：你用自然语言说出目标，AI 助手帮你拆成可执行的任务、安排时间和截止日期；关键信息不够时它会**先反问澄清**，而不是替你瞎猜。所有数据存在本地 SQLite，AI 用你自己的 DeepSeek Key（BYOK），不经过任何第三方服务器。
 
-- 不依赖 Plane
-- 不需要登录、团队、Workspace
-- Web 访问
-- Plane 风格左侧导航和高密度工作台
-- Projects、Work Items、Kanban、Today 课表
-- 任务只需标题即可创建，其他字段可后补
-- 对话式 AI Teacher
-- SQLite 本地存储
-- Python 运行时零第三方依赖
-- Codex SDK thread resume
-- Markdown 长期记忆
-- 内置本地适配器按 CC Switch 的架构将 Codex Responses 转成 DeepSeek Chat Completions
-- 不修改现有 CC Switch、`~/.codex` 或 Codex App 登录
+<!-- 截图占位：建议在此放一张主界面截图或操作 GIF（如 docs/screenshot.png），首屏的图能极大提升项目可读性。
+![TaskFlow](docs/screenshot.png) -->
 
-## 首次配置
+## 特性
 
-```bash
-cp .env.example .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY
-npm install
-```
+- **多视图工作台** —— 今天 / 收件箱 / 即将到来 / 日历（月·周·日）/ 项目 / 标签 / 本周冲刺
+- **AI 助手（专注 todo 规划，BYOK）** —— 自然语言拆任务、排时间；信息模糊时先「智能反问」带选项澄清，再给出可一键采纳的任务建议
+- **日历拖拽** —— 周/日视图拖动改时间、跨天拖动改日期；支持有开始/截止时间的多日任务（区间内每天一个实例）
+- **本周冲刺** —— 把本周重要的大事件挑进一个聚焦视图，带完成进度条
+- **键盘优先** —— ⌘K 搜索、⌘/ 唤起 AI、`T`/`I`/`U`/`C` 快速切换视图
+- **本地优先** —— 数据存本地 SQLite，无账号、无云端、无遥测
+- **深浅色主题**
 
-每次 AI 请求期间，应用会在随机本地端口启动一个临时 Responses 适配器，请求结束后立即关闭。
-真实 DeepSeek key 只由这个本地进程读取，不会传给 Codex CLI 子进程。
+## 技术栈
 
-AI Teacher 的网页聊天默认使用 DeepSeek Chat Completions SSE 直接流式输出。
-`AI_PLANNER_THINKING=disabled` 会更像普通聊天，首字更快；改成 `enabled` 时会显示推理状态心跳。
+- **前端**：React + TypeScript + Vite
+- **后端**：Node.js + Express + better-sqlite3（本地 SQLite）
+- **AI**：DeepSeek Chat Completions，SSE 流式输出；**BYOK**——用你自己的 Key，存在浏览器本地
 
-聊天等待控制：
+## 快速开始
 
-- `AI_PLANNER_FIRST_REPLY_TIMEOUT_SECONDS=25`：超过这个时间还没有任何可见回复，会自动停止。
-- `AI_PLANNER_IDLE_TIMEOUT_SECONDS=60`：超过这个时间没有收到任何模型信号，会自动停止。
-- `AI_PLANNER_TIMEOUT_SECONDS=180`：单次请求总时限。
-
-如果你希望它像普通聊天机器人一样快，保持 `AI_PLANNER_THINKING=disabled`。如果打开 thinking，前端仍会按“可见回复超时”停止，避免一直卡在 thinking。
-
-## 启动
-
-Fish：
-
-```fish
-fish scripts/start.fish
-```
-
-浏览器打开：
-
-```text
-http://localhost:5055
-```
-
-同一局域网内手机访问：
-
-```text
-http://你的电脑IP:5055
-```
-
-查看本机 IP：
+需要 Node.js ≥ 22。
 
 ```bash
-ipconfig getifaddr en0
+git clone https://github.com/Elio2000/TaskFlow.git
+cd TaskFlow
+
+npm run install:all   # 安装 根 / server / client 三处依赖
+npm run build         # 构建前端
+npm start             # 启动服务
 ```
 
-## 数据
+打开 **http://localhost:3001**，在左下角「AI 设置」里填入你的 DeepSeek API Key（[在此获取](https://platform.deepseek.com/)）。Key 只存在你的浏览器本地，不会上传服务器、也不会写进仓库。
 
-SQLite 数据：
+> 不需要创建 `.env`——TaskFlow 默认 BYOK，开箱即用、零配置。
 
-```text
-data/planner.sqlite3
+### 开发模式（热更新）
+
+```bash
+npm run dev   # 同时启动 Vite(5173) 和后端(3001)，前端通过代理访问 API
 ```
 
-AI Planner 的全部私有数据统一放在 `data/`：
+### 运行测试
 
-```text
-data/
-├── planner.sqlite3
-├── codex-home/
-│   └── sessions/
-└── memory/
-    ├── profile.md
-    ├── projects.md
-    └── daily/YYYY-MM-DD.md
+```bash
+npm test      # 纯函数单元测试（日期/拖拽几何等）
 ```
 
-`data/codex-home` 是独立 `CODEX_HOME`，不会读取或修改你当前 Codex App 使用的
-`~/.codex/config.toml`、`~/.codex/auth.json` 和 `~/.codex/sessions`。
+## 数据与隐私
 
-## 配置 AI 老师规则
-
-编辑：
-
-```text
-agent.md
-```
-
-也可以在 `Settings -> AI Planner` 中直接修改。
-
-## 页面
-
-- `Work Items`：全部任务列表和快速创建，支持搜索、状态/标签/优先级筛选和基础排序
-- `Board`：按自定义 State 生成看板列，支持拖拽切换状态
-- `Today`：按日期查看课表
-- `AI Teacher`：连续对话、日报和任务拆解；支持 Markdown、`/compact`、`@` 引用任务
-- `Projects`：长期项目及完成进度
-- `Settings`：模型状态、`agent.md`、自定义 State、Labels 和 Markdown 长期记忆
-
-## AI Teacher 输入
-
-- Markdown 会被渲染成正文样式，不再直接显示 `**bold**`。
-- 输入 `/` 会出现斜杠命令；当前支持 `/compact`，用于把当前聊天压缩进长期记忆并清空原始对话。
-- 输入 `@` 会出现未完成任务列表，选中后插入 `@#任务ID 标题`，AI 可以结合这个任务继续讨论。
-
-## Plane 功能迁移清单
-
-Plane 的任务管理功能盘点和迁移批次见：
-
-```text
-docs/plane-task-feature-inventory.md
-```
+- 所有任务、项目数据存在本地 SQLite：`data/todo.sqlite3`
+- DeepSeek Key 存在浏览器 `localStorage`，每次请求随消息发给本地后端转发给 DeepSeek，**不落库、不上传、不进仓库**
+- 没有账号、没有团队、没有云端同步、没有遥测
 
 ## 设计取舍
 
-这个项目刻意不做：
+TaskFlow 刻意**不做**：登录、多用户、团队协作、权限、云端同步。
 
-- 登录
-- 多用户
-- 团队协作
-- 权限
-- Plane 级复杂跨视图拖拽和自动化工作流
-- Docker
-- Redis/Postgres/Celery
+它只解决一件事：**一个人，把自己的事规划好。** 所以它快、简单、数据完全归你自己。
 
-它只解决个人跨设备访问、项目任务管理、连续对话、长期记忆和 AI 拆任务。
+## 反馈
+
+这是个人项目，欢迎 [提 Issue](https://github.com/Elio2000/TaskFlow/issues) 提需求或报 bug——你的真实使用反馈会直接影响后续方向。
+
+## License
+
+ISC

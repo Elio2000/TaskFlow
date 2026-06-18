@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   yToMin, computeMove, computeResizeTop, computeResizeBottom,
   dateFromX, minToTime, timeToMin, taskOccursOn,
-  computeBlockMovePatch, computeDayDropPatch, computeSlotDropPatch,
+  computeBlockMovePatch, computeDayDropPatch, computeSlotDropPatch, taskInWeek,
 } from "../client/src/utils/calendarGeom.ts";
 
 // HOUR_PX = 56 in the app; gridTop = 0 for these tests.
@@ -128,4 +128,26 @@ test("computeDayDropPatch: multi-day moves range to start at drop; single-day & 
 test("computeSlotDropPatch: multi-day keeps range (time only); single-day sets day + time", () => {
   assert.deepEqual(computeSlotDropPatch({ start_date: "2026-06-16", due_date: "2026-06-19" }, "2026-06-20", 540), { due_time: "09:00", end_time: "10:00" });
   assert.deepEqual(computeSlotDropPatch({ start_date: null, due_date: null }, "2026-06-20", 540), { start_date: null, due_date: "2026-06-20", due_time: "09:00", end_time: "10:00" });
+});
+
+// 本周冲刺 week membership — week of 2026-06-15(Mon)…2026-06-21(Sun)
+test("taskInWeek: single due date inside / on boundary / outside", () => {
+  assert.equal(taskInWeek(null, "2026-06-17", "2026-06-15", "2026-06-21"), true);   // mid-week
+  assert.equal(taskInWeek(null, "2026-06-15", "2026-06-15", "2026-06-21"), true);   // Monday boundary
+  assert.equal(taskInWeek(null, "2026-06-21", "2026-06-15", "2026-06-21"), true);   // Sunday boundary
+  assert.equal(taskInWeek(null, "2026-06-14", "2026-06-15", "2026-06-21"), false);  // day before
+  assert.equal(taskInWeek(null, "2026-06-22", "2026-06-15", "2026-06-21"), false);  // day after
+});
+
+test("taskInWeek: multi-day range that spans into / brackets / misses the week", () => {
+  assert.equal(taskInWeek("2026-06-10", "2026-06-16", "2026-06-15", "2026-06-21"), true);  // starts before, ends in
+  assert.equal(taskInWeek("2026-06-20", "2026-06-25", "2026-06-15", "2026-06-21"), true);  // starts in, ends after
+  assert.equal(taskInWeek("2026-06-01", "2026-06-30", "2026-06-15", "2026-06-21"), true);  // brackets the week
+  assert.equal(taskInWeek("2026-06-01", "2026-06-07", "2026-06-15", "2026-06-21"), false); // entirely before
+  assert.equal(taskInWeek("2026-06-22", "2026-06-28", "2026-06-15", "2026-06-21"), false); // entirely after
+});
+
+test("taskInWeek: only start date, and undated", () => {
+  assert.equal(taskInWeek("2026-06-18", null, "2026-06-15", "2026-06-21"), true);
+  assert.equal(taskInWeek(null, null, "2026-06-15", "2026-06-21"), false);
 });

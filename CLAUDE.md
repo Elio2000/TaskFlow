@@ -4,84 +4,70 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-**Start the app (primary):**
-```fish
-fish scripts/start.fish
-```
-This starts `app.py` (the Python web server) on port 5055. The script checks for `.env` and the Codex SDK before launching.
-
-**Run all tests:**
+**Install everything (root + server + client):**
 ```bash
-npm test
-# Runs: node --test tests/*.test.mjs  (nlp + labels pure-function unit tests, via Node 25 native TS type-stripping)
+npm run install:all
 ```
 
-**Run a single test file:**
+**Development (HMR):**
 ```bash
-node --test tests/nlp.test.mjs
+npm run dev          # concurrently: Vite client on :5173 + Express server on :3001 (client proxies /api to :3001)
 ```
 
-**Build the frontend:**
+**Production build + run:**
 ```bash
-npm run build   # runs: cd client && npm run build
+npm run build        # cd client && tsc -b && vite build  → client/dist
+npm start            # cd server && tsx src/index.ts  → serves client/dist + API on http://localhost:3001
 ```
 
-**First-time setup:**
+**Tests:**
 ```bash
-cp .env.example .env   # then fill in DEEPSEEK_API_KEY
-npm install
+npm test                          # node --test tests/*.test.mjs (pure-function unit tests; Node ≥22 native TS strip)
+node --test tests/calendar.test.mjs   # a single file
 ```
 
-**Check bridge syntax:**
-```bash
-npm run check:bridge
-```
+There is **no `.env` requirement** — the app is BYOK (see AI section). The server start script uses `--env-file-if-exists`, so a clean clone runs with zero config.
 
 ## Architecture
 
-This is a single-person personal planner. It has **two distinct runtime modes** — understand which is active before editing:
+Single-person personal planner. One runtime: a **Node/Express backend** that serves a **React/Vite frontend** and a local **SQLite** DB. (Historical note: an old Python `app.py` / Codex-SDK path described in earlier docs has been removed — it no longer exists. Ignore any reference to `app.py`, `codex_bridge.mjs`, `scripts/start.fish`, or port 5055.)
 
-### Mode 1: `app.py` (primary, always active)
-`app.py` is a zero-dependency Python `ThreadingHTTPServer` that:
-- Serves the frontend from `static/` (the Vite build output copied there, or `client/dist/`)
-- Exposes a REST API (`/api/...`) backed by SQLite at `data/planner.sqlite3`
-- Streams AI Teacher responses via SSE at `POST /api/ai/chat/stream`
-- The AI chat uses **DeepSeek Chat Completions** directly via `curl` subprocess — no Python HTTP library
-
-The Python server is the **only runtime required** for normal use. There is no separate Node server needed.
-
-### Mode 2: Codex SDK path (optional, for structured task creation)
-When `AI_PROVIDER=codex_sdk` is set and triggered, `app.py` spawns `codex_bridge.mjs` (Node.js) as a subprocess via stdin/stdout JSON protocol. `codex_bridge.mjs` starts a temporary local HTTP proxy (`deepseek_responses_proxy.mjs`) that translates OpenAI Responses API format → DeepSeek Chat Completions, allowing the Codex SDK to talk to DeepSeek without modifying `~/.codex` or the Codex App.
+### Backend: `server/` (Node + Express + better-sqlite3)
+- Entry: `server/src/index.ts` — Express on **port 3001**; attaches a single shared `db` to every request as `req.db`; mounts routes; serves `client/dist` as static in production.
+- DB: `server/src/db.ts` — better-sqlite3 (synchronous) at **`data/todo.sqlite3`** (repo root), WAL mode, `foreign_keys = ON`. `initDB()` creates tables + runs idempotent migrations + data repairs on boot. `seed.ts` seeds an empty DB.
+- Routes: `server/src/routes/` — `tasks`, `projects`, `labels`, `sections`, `chat`, `ai`, `memories`, `agentsDoc`, `settings`, `cycles`.
 
 ### Frontend: `client/` (React + TypeScript + Vite)
-- `client/src/App.tsx` — root component; manages routing, theme, global task state (polled every 5s)
-- `client/src/api.ts` — typed fetch wrappers for all backend REST calls
-- `client/src/views/` — page views: Today, Inbox, Upcoming, Calendar, Board, List
-- `client/src/ai/AIPanel.tsx` — AI Teacher chat panel (float/sidebar/bottom layouts)
-- `client/src/components/TaskModal.tsx` — full task detail/edit modal
+- `client/src/App.tsx` — root; **state-based routing** (no router lib), theme, global task state (polled every 5s).
+- `client/src/api.ts` — typed fetch wrappers for all backend REST calls.
+- `client/src/views/` — `Views.tsx` (Today/Inbox/Upcoming/Calendar), `ProjectView`, `SprintView` (本周冲刺), `LabelView`.
+- `client/src/ai/AIPanel.tsx` — AI 助手 chat panel (float/sidebar/bottom layouts); renders `ProposalCard` / `QuestionCard`.
+- `client/src/components/` — `TaskModal`, `QuickComposer`, `DateMenu`, `TaskRow`, `Sidebar`, etc.
+- `client/src/utils/calendarGeom.ts` — pure date/drag-geometry functions (see testing convention below).
 
-The built frontend is served from `static/index.html` by `app.py`. During development, run `npm run dev:client` for Vite HMR.
+### AI: `server/src/routes/ai.ts`
+- `POST /api/chat/stream` — DeepSeek Chat Completions via `fetch`, streamed back over SSE.
+- **BYOK-only**: the DeepSeek key arrives in the request body (`apiKey`) per request; there is **no server-side fallback key**. Never commit a key. The client stores it in `localStorage`.
+- System prompt is assembled in `ai.ts`: base role string → optional `settings.agent_rules` override → per-project context (project, `memories`, `agents_docs`, task list) → current date → `PROPOSAL_PROTOCOL` → `QUESTION_PROTOCOL`.
 
-### There is also an unrelated `server/` directory
-`server/` is a separate older TypeScript/Express server (`server/src/index.ts`) with its own SQLite DB (`data/todo.sqlite3`). It is **not used** by the main `app.py` flow — do not confuse its routes or DB with `app.py`'s.
+## Key conventions
 
-## Key design decisions
+- **AI action protocols** (this app's own convention, unrelated to Claude Code's harness): the model emits fenced blocks after its visible reply. The server strips them from the streamed text, parses them, and sends them in the SSE `done` event; the client renders cards.
+  - ` ```proposals``` ` → task-mutation suggestions, **persisted** in `messages.proposals` → `ProposalCard` ("应用全部").
+  - ` ```questions``` ` → option-based clarifying questions, **transient** (not stored) → `QuestionCard`; the user's picks compose into a follow-up message that then yields proposals.
+  - To add a new protocol, mirror these: a `*_PROTOCOL` prompt constant, a server-side parse + `done`-event field, and a client card.
+- **Schema migrations**: `CREATE TABLE IF NOT EXISTS` won't alter existing tables. For new columns, follow the `in_sprint` pattern in `db.ts` — `PRAGMA table_info(tasks)`, then `ALTER TABLE … ADD COLUMN …` if absent.
+- **Memory & AI rules** live in SQLite, not files: `memories` (per-project facts), `agents_docs` (a per-project AGENTS.md), and `settings.agent_rules` (overrides the base system prompt). There is no `agent.md` file.
+- **本周冲刺 (sprint)**: the current week (Mon–Sun) is computed live on the client (`DateU.weekDates`) and never stored. Membership is the per-task boolean `tasks.in_sprint`; a flagged task drops out of the view automatically once its dates leave the week. `SprintView.tsx` + `taskInWeek` in `calendarGeom.ts`.
+- **Pure functions + unit tests** for logic the headless browser preview can't exercise (drag gestures, date math): keep it in pure functions (e.g. `calendarGeom.ts`) and cover it in `tests/*.test.mjs`. The preview throttles `requestAnimationFrame` and can't synthesize pointer drags, so this is the reliable verification channel for that logic.
+- **Legacy/unused**: the `cycles` + `cycle_tasks` tables and `/api/cycles` routes are leftovers from a removed "Cycles" view, superseded by `in_sprint` / `SprintView`. Safe to ignore; can be removed.
 
-- **All DB access in `app.py` is serialized** through `_db_lock` (a threading.Lock). The `_LockedConnection` wrapper releases the lock on `.close()`. Never hold the connection past a `with` block.
-- **Soft deletes**: tasks use `deleted_at` (soft delete) and `archived_at` (archive) — never hard-deleted via the API. Most queries filter `WHERE deleted_at = ''`.
-- **State vs status**: `tasks.state_id` references a user-customizable `states` table. `tasks.status` (`todo`/`doing`/`done`) is a denormalized computed value derived from `states.group_key`. Both are kept in sync on every write.
-- **AI Teacher action protocol**: The streaming chat endpoint uses a hidden delimiter `<ai_planner_actions>…</ai_planner_actions>` appended after the visible reply. The server strips the action block before sending SSE chunks to the client; on stream close it parses and applies task/memory mutations.
-- **Memory is Markdown files** in `data/memory/`: `profile.md`, `projects.md`, `daily/YYYY-MM-DD.md`. The AI prompt injects these as context. `/compact` summarizes the chat into today's daily file and clears the DB messages table.
-- **AI rules** are read live from `agent.md` on every request — edit that file to change the AI Teacher's behavior without restarting.
+## Environment variables
 
-## Environment variables (`.env`)
+All optional — the app runs with none (BYOK). Copy `.env.example` → `.env` only to override defaults.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | — | Required. Read only by the local adapter subprocess. |
-| `AI_PLANNER_MODEL` | `deepseek-v4-pro` | DeepSeek model name |
-| `AI_PLANNER_THINKING` | `disabled` | `enabled` shows reasoning heartbeat; `disabled` is faster |
-| `AI_PLANNER_FIRST_REPLY_TIMEOUT_SECONDS` | `25` | Abort if no visible reply within N seconds |
-| `AI_PLANNER_IDLE_TIMEOUT_SECONDS` | `60` | Abort if no model signal within N seconds |
-| `AI_PLANNER_TIMEOUT_SECONDS` | `180` | Total request time limit |
-| `PORT` | `5055` | Web server port |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek-compatible gateway URL |
+| `AI_PLANNER_MODEL` | `deepseek-chat` | Default model (the in-app model picker overrides it per request) |
+| `AI_PLANNER_THINKING` | `disabled` | `enabled` surfaces a reasoning heartbeat |
