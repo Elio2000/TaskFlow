@@ -505,6 +505,14 @@ export function TaskModal({ taskId, onClose }: TaskModalProps) {
               )}
             </PropRow>
 
+            {/* 本周冲刺 */}
+            <PropRow label="本周冲刺" icon="flag">
+              <button className="btn-ghost" style={{ fontSize: 13, padding: '3px 9px', color: task.in_sprint ? 'var(--green)' : 'var(--text-secondary)' }}
+                onClick={() => save({ in_sprint: task.in_sprint ? 0 : 1 })}>
+                {task.in_sprint ? '✓ 已加入' : '加入冲刺'}
+              </button>
+            </PropRow>
+
             {/* Reminder */}
             <PropRow label="提醒" icon="bell">
               <select

@@ -35,42 +35,6 @@ function LabelsSection({ route, setRoute }: { route: { view: string; projectId?:
   )
 }
 
-function CyclesSection({ route, setRoute }: { route: { view: string; projectId?: string }; setRoute: (r: { view: string; projectId?: string }) => void }) {
-  const [cycles, setCycles] = useState<any[]>([])
-  useEffect(() => { api.getCycles().then(setCycles); const id = setInterval(() => api.getCycles().then(setCycles), 10000); return () => clearInterval(id) }, [])
-  const today = new Date().toISOString().slice(0, 10)
-  if (!cycles.length) return null
-  // Show ALL sprints (not just the currently-active one) so a sprint doesn't vanish the
-  // day after it ends. Active = green flag; ended = muted. Active first, then most recent.
-  const isLive = (c: any) => c.start_date <= today && c.end_date >= today
-  const sorted = [...cycles].sort((a: any, b: any) => {
-    const la = isLive(a) ? 1 : 0, lb = isLive(b) ? 1 : 0
-    if (la !== lb) return lb - la
-    return a.start_date < b.start_date ? 1 : -1
-  })
-
-  return (
-    <div style={{ padding: '4px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 8px 6px' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: .05, flex: 1 }}>冲刺</span>
-      </div>
-      {sorted.map((c: any) => {
-        const onRoute = route.view === 'cycle' && route.projectId === c.id
-        const live = isLive(c)
-        const past = c.end_date < today
-        return (
-          <button key={c.id} className={'side-item' + (onRoute ? ' is-active' : '')}
-            onClick={() => setRoute({ view: 'cycle', projectId: c.id })}
-            style={{ width: '100%', opacity: past ? 0.55 : 1 }}>
-            <Icon name="flag" size={14} style={{ color: live ? 'var(--green)' : 'var(--text-tertiary)', flex: 'none' }} />
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>{c.name}</span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 interface SidebarProps {
   route: { view: string; projectId?: string }
   setRoute: (r: { view: string; projectId?: string }) => void
@@ -150,7 +114,10 @@ export function Sidebar({ route, setRoute, collapsed, setCollapsed, tasks, onTog
 
       <div style={{ padding: '0 8px', marginBottom: 12 }}>
         {navItems.slice(0, 2).map(renderNav)}
-        <CyclesSection route={route} setRoute={setRoute} />
+        <button className={'side-item' + (route.view === 'sprint' ? ' is-active' : '')} onClick={() => setRoute({ view: 'sprint' })}>
+          <Icon name="flag" size={16} style={{ flex: 'none', color: 'var(--green)' }} />
+          本周冲刺
+        </button>
         {navItems.slice(2).map(renderNav)}
       </div>
 

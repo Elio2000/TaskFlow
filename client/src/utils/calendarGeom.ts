@@ -62,6 +62,18 @@ export function taskOccursOn(startDate: string | null | undefined, dueDate: stri
   return false
 }
 
+/** Does a task's date range overlap the week [weekStart, weekEnd] (all "YYYY-MM-DD")?
+ *  Used by 本周冲刺 (this-week sprint), which is computed live each week — a flagged task
+ *  drops out automatically once its dates no longer touch the current week. Undated → no. */
+export function taskInWeek(startDate: string | null | undefined, dueDate: string | null | undefined, weekStart: string, weekEnd: string): boolean {
+  const s = startDate || null
+  const e = dueDate || null
+  if (!s && !e) return false
+  const a = (s && e) ? (s <= e ? s : e) : (e || s)!
+  const b = (s && e) ? (s <= e ? e : s) : (e || s)!
+  return a <= weekEnd && b >= weekStart
+}
+
 /** minutes since midnight → "HH:MM". */
 export function minToTime(min: number): string {
   return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0')
