@@ -34,6 +34,23 @@ mcp_servers:
 - `tools.include` 只放了安全子集；想让 Hermes 也能删任务/打冲刺标记，加上 `delete_task` / `set_sprint`。
 - 改完执行 `hermes mcp` 或运行时 `/reload-mcp` 生效。
 
+### 更快启动（可选）
+
+`tsx` 每次启动要现场编译 TS，有约 1–2 秒冷启动。若 Hermes 偶尔“识别不到任务工具”（多半是握手超时），或只想启动更快，可以预编译成普通 JS：
+
+```bash
+cd server && npm run build:mcp     # 产出 dist/mcp.js（dist/ 已 gitignore）
+```
+
+然后把上面配置里的 `command`/`args` 换成：
+
+```yaml
+    command: "node"
+    args: ["/Users/lixiangting/Elio/ai-planner-lite/server/dist/mcp.js"]
+```
+
+这样启动几乎瞬时、运行时也不再需要 `tsx`。改了 `mcp.ts` 后记得重新 `npm run build:mcp`。
+
 ## 可用工具
 
 | 工具 | 作用 |
