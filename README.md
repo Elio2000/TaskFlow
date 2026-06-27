@@ -58,6 +58,10 @@ npm test      # 纯函数单元测试（日期/拖拽几何等）
 - DeepSeek Key 存在浏览器 `localStorage`，每次请求随消息发给本地后端转发给 DeepSeek，**不落库、不上传、不进仓库**
 - 没有账号、没有团队、没有云端同步、没有遥测
 
+## 集成（Hermes / MCP）
+
+TaskFlow 自带一个 **MCP server**（`server/src/mcp.ts`），把任务操作暴露成 MCP 工具。接入 [Hermes Agent](https://hermes-agent.nousresearch.com) 等 MCP 客户端后，就能在 Telegram / Slack 里用自然语言查/建/改任务，数据落到同一个本地 SQLite、网页端实时可见。设置见 [docs/hermes-mcp.md](docs/hermes-mcp.md)。
+
 ## 设计取舍
 
 TaskFlow 刻意**不做**：登录、多用户、团队协作、权限、云端同步。
