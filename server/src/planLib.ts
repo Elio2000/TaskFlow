@@ -6,8 +6,8 @@ import { z } from 'zod'
 
 /* ============ zod schemas ============ */
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/ // due_date 在 DB 里按字典序比较，必须是严格的 YYYY-MM-DD
-const TIME_RE = /^\d{1,2}:\d{2}$/ // 协议说 HH:MM，但对 "9:00" 这类输出宽容一点
+const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/ // due_date 在 DB 里按字典序比较，必须是严格的 YYYY-MM-DD 且月日在合法范围
+const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/ // 协议说 HH:MM，对 "9:00" 宽容，但小时/分钟必须在合法范围
 
 const dateField = z.string().regex(DATE_RE, '日期必须是 YYYY-MM-DD').nullish()
 const timeField = z.string().regex(TIME_RE, '时间必须是 HH:MM').nullish()

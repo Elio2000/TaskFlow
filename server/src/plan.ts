@@ -57,7 +57,15 @@ function buildSystemPrompt(db: Database.Database, projectId?: string | null): st
     if (agentRules?.value) systemPrompt = agentRules.value
   } catch {}
 
-  // 项目上下文 + 任务快照（含状态/截止/备注/子任务），让模型基于应用自身状态规划
+  // 任务快照：让模型基于应用自身状态规划（去重、引用 task_id 做 update/complete）。
+  // 指定项目 → 该项目全量快照（含子任务）；未指定 → 跨项目未完成任务快照（不含子任务，保持精简）。
+  const taskLine = (t: any, extra = '') => {
+    const status = t.completed ? '[已完成]' : '[未完成]'
+    const due = t.due_date ? ` | 截止:${t.due_date}${t.due_time ? ' ' + t.due_time : ''}` : ''
+    const pri = t.priority < 4 ? ` | P${t.priority}` : ''
+    const desc = t.description ? ` | 备注:${String(t.description).replace(/\s+/g, ' ').slice(0, 120)}` : ''
+    return `[${t.id}] ${status} ${t.title}${due}${pri}${desc}${extra}`
+  }
   if (projectId) {
     try {
       const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as any
@@ -68,14 +76,24 @@ function buildSystemPrompt(db: Database.Database, projectId?: string | null): st
         .all(projectId) as any[]
       if (tasks.length) {
         systemPrompt += '\n\n## 当前任务列表（含状态/截止/备注/子任务）\n' + tasks.map((t: any) => {
-          const status = t.completed ? '[已完成]' : '[未完成]'
-          const due = t.due_date ? ` | 截止:${t.due_date}${t.due_time ? ' ' + t.due_time : ''}` : ''
-          const pri = t.priority < 4 ? ` | P${t.priority}` : ''
-          const desc = t.description ? ` | 备注:${String(t.description).replace(/\s+/g, ' ').slice(0, 120)}` : ''
           const subs = db.prepare('SELECT title, completed FROM tasks WHERE parent_id = ? LIMIT 20').all(t.id) as any[]
           const subStr = subs.length ? ` | 子任务:${subs.map((s: any) => (s.completed ? '✓' : '○') + s.title).join('、')}` : ''
-          return `[${t.id}] ${status} ${t.title}${due}${pri}${desc}${subStr}`
+          return taskLine(t, subStr)
         }).join('\n')
+      }
+    } catch {}
+  } else {
+    try {
+      const projects = db.prepare('SELECT id, name FROM projects WHERE archived = 0').all() as any[]
+      if (projects.length) systemPrompt += `\n\n现有项目：${projects.map((p: any) => p.name).join('、')}`
+
+      const tasks = db
+        .prepare("SELECT * FROM tasks WHERE parent_id IS NULL AND completed = 0 ORDER BY (due_date IS NULL) ASC, due_date ASC, sort_order ASC LIMIT 80")
+        .all() as any[]
+      if (tasks.length) {
+        const nameOf = (id: string) => projects.find((p: any) => p.id === id)?.name || id
+        systemPrompt += '\n\n## 当前未完成任务（跨项目快照）\n' +
+          tasks.map((t: any) => taskLine(t, ` | 项目:${nameOf(t.project_id)}`)).join('\n')
       }
     } catch {}
   }

@@ -165,3 +165,27 @@ test("formatQuestionLines: 编号 + 选项", () => {
   ]);
   assert.match(s, /^1\. 何时？（选项：早 \/ 晚；也可自由回答）\n2\. /);
 });
+
+/* ============ 日期/时间范围校验（review fix）============ */
+
+test("validateProposals: 日期月/日越界拒绝，合法边界通过", () => {
+  const bad1 = validateProposals([{ op: "create", title: "x", due_date: "2026-13-05" }]);
+  const bad2 = validateProposals([{ op: "create", title: "x", due_date: "2026-02-32" }]);
+  const ok1 = validateProposals([{ op: "create", title: "x", due_date: "2026-12-31" }]);
+  const ok2 = validateProposals([{ op: "create", title: "x", due_date: "2026-01-01" }]);
+  assert.equal(bad1.ok, false);
+  assert.equal(bad2.ok, false);
+  assert.equal(ok1.ok, true);
+  assert.equal(ok2.ok, true);
+});
+
+test("validateProposals: 时间小时/分钟越界拒绝，宽容单位数小时", () => {
+  const bad1 = validateProposals([{ op: "create", title: "x", due_time: "24:00" }]);
+  const bad2 = validateProposals([{ op: "create", title: "x", due_time: "23:99" }]);
+  const ok1 = validateProposals([{ op: "create", title: "x", due_time: "9:05" }]);
+  const ok2 = validateProposals([{ op: "create", title: "x", due_time: "23:59" }]);
+  assert.equal(bad1.ok, false);
+  assert.equal(bad2.ok, false);
+  assert.equal(ok1.ok, true);
+  assert.equal(ok2.ok, true);
+});
