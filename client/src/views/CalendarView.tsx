@@ -8,7 +8,6 @@ import { Icon } from '../icons'
 import { TaskRow } from '../components/TaskRow'
 import { TaskModal } from '../components/TaskModal'
 import { QuickComposer } from '../components/QuickComposer'
-import { AIPanel } from '../ai/AIPanel'
 
 type CalMode = 'month' | 'week'
 const HOUR_PX = 56
@@ -198,8 +197,6 @@ export function CalendarView() {
   const [cursor, setCursor] = useState(DateU.today())
   const [selected, setSelected] = useState(DateU.today())
   const [taskModal, setTaskModal] = useState<string|null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [aiTask, setAiTask] = useState<Task|null>(null)
   const [createSlot, setCreateSlot] = useState<{date:string;startTime:string;endTime:string}|null>(null)
 
   const fetch = () => api.getTasks().then(setTasks)
@@ -254,7 +251,7 @@ export function CalendarView() {
                 <button className="btn-icon" title="收起面板" style={{ width:24,height:24 }} onClick={()=>setPanelOpen(false)}><Icon name="chevronRight" size={15}/></button>
               </div>
               <QuickComposer projectId="inbox" defaultDueDate={selected} placeholder="为这天添加任务…" collapsed collapsedLabel="为这天添加任务" onDone={fetch}/>
-              {dayTasks.length===0 ? <div style={{ fontSize:13,color:'var(--text-tertiary)',paddingTop:8 }}>无任务</div> : dayTasks.map(t=><TaskRow key={t.id} task={t} draggable showProject onClick={()=>setTaskModal(t.id)} onAIClick={task=>{setAiTask(task);setAiOpen(true)}} onDelete={fetch} onToggle={fetch}/>)}
+              {dayTasks.length===0 ? <div style={{ fontSize:13,color:'var(--text-tertiary)',paddingTop:8 }}>无任务</div> : dayTasks.map(t=><TaskRow key={t.id} task={t} draggable showProject onClick={()=>setTaskModal(t.id)} onDelete={fetch} onToggle={fetch}/>)}
             </div>
           )}
         </div>
@@ -272,7 +269,6 @@ export function CalendarView() {
 
       {createSlot && <CreatePanel slot={createSlot} onCommit={async title=>{await api.addTask({title,due_date:createSlot.date,due_time:createSlot.startTime,end_time:createSlot.endTime,project_id:'inbox'} as any);setCreateSlot(null);fetch()}} onCancel={()=>setCreateSlot(null)}/>}
       {taskModal && <TaskModal taskId={taskModal} onClose={()=>{setTaskModal(null);fetch()}}/>}
-      {aiOpen && <AIPanel projectId={aiTask?.project_id||'inbox'} refTask={aiTask} layout="float" onClose={()=>setAiOpen(false)}/>}
     </div>
   )
 }

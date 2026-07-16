@@ -62,6 +62,9 @@ export function initDB(): Database.Database {
       FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
 
+    /* conversations / messages / memories / agents_docs 是已下线聊天面板的 legacy 表：
+       坍缩改造（一次性 plan 工具替代聊天）后没有任何读写路径，仅为保留旧数据而不删
+       （无破坏性迁移）。详见 CLAUDE.md「Legacy/unused」。 */
     CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -162,9 +165,6 @@ export function initDB(): Database.Database {
       updateStmt.run(fixed, t.id)
     }
   }
-
-  // Clean up empty assistant messages
-  db.prepare("DELETE FROM messages WHERE role = 'assistant' AND trim(content) = '' AND proposals IS NULL").run()
 
   return db
 }

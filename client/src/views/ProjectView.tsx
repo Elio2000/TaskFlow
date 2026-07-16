@@ -7,7 +7,6 @@ import { TaskChips } from '../components/TaskChips'
 import { TaskCheckbox } from '../components/TaskCheckbox'
 import { TaskModal } from '../components/TaskModal'
 import { QuickComposer } from '../components/QuickComposer'
-import { AIPanel } from '../ai/AIPanel'
 import { parseTaskLabels } from '../utils/labels'
 import { dragSource, draggedTaskId, noDrag } from '../utils/drag'
 
@@ -36,8 +35,6 @@ export function ProjectView({ projectId }: { projectId: string }) {
   const [sections, setSections] = useState<Section[]>([])
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
   const [taskModal, setTaskModal] = useState<string | null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [aiTask, setAiTask] = useState<Task | null>(null)
   const [newColName, setNewColName] = useState('')
   const [newSec, setNewSec] = useState(false)
   const [newSecName, setNewSecName] = useState('')
@@ -59,7 +56,6 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
   const unsectioned = tasks.filter(t => !t.section_id && !t.parent_id && !t.completed)
   const openTask = (t: Task) => setTaskModal(t.id)
-  const openAI = (t: Task) => { setAiTask(t); setAiOpen(true) }
 
   // List drag reorder / move-to-section (shared util: task id travels via dataTransfer).
   // Renumber the target section so order is stable even when tasks share the default sort_order.
@@ -91,7 +87,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
       {viewMode === 'list' && (
         <>
-          {unsectioned.map(t => <TaskRow key={t.id} task={t} draggable onMoveTo={(draggedId) => handleListMove(draggedId, t.id)} onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)}
+          {unsectioned.map(t => <TaskRow key={t.id} task={t} draggable onMoveTo={(draggedId) => handleListMove(draggedId, t.id)} onClick={() => openTask(t)} onDelete={fetch} onToggle={fetch} />)}
           {sections.map(s => {
             const ts = tasks.filter(t => t.project_id === projectId && t.section_id === s.id && !t.parent_id && !t.completed)
             return (
@@ -101,7 +97,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
                   <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{ts.length}</span>
                   <button className="btn-icon" style={{ width: 24, height: 24 }} onClick={async () => { await api.deleteSection(s.id); fetch() }}><Icon name="trash" size={12} /></button>
                 </div>
-                {ts.map(t => <TaskRow key={t.id} task={t} draggable onMoveTo={(draggedId) => handleListMove(draggedId, t.id)} onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)}
+                {ts.map(t => <TaskRow key={t.id} task={t} draggable onMoveTo={(draggedId) => handleListMove(draggedId, t.id)} onClick={() => openTask(t)} onDelete={fetch} onToggle={fetch} />)}
                 <QuickComposer projectId={projectId} sectionId={s.id} collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
               </div>
             )
@@ -134,7 +130,6 @@ export function ProjectView({ projectId }: { projectId: string }) {
       )}
 
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
-      {aiOpen && <AIPanel projectId={aiTask?.project_id || projectId} refTask={aiTask} layout="float" onClose={() => setAiOpen(false)} />}
     </ViewShell>
   )
 }

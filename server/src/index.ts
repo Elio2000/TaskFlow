@@ -9,11 +9,7 @@ import { taskRoutes } from './routes/tasks.js'
 import { projectRoutes } from './routes/projects.js'
 import { labelRoutes } from './routes/labels.js'
 import { sectionRoutes } from './routes/sections.js'
-import { chatRoutes } from './routes/chat.js'
-import { memoriesRoutes } from './routes/memories.js'
-import { agentsDocRoutes } from './routes/agentsDoc.js'
 import { settingsRoutes } from './routes/settings.js'
-import { aiRoutes } from './routes/ai.js'
 import { planRoutes } from './routes/plan.js'
 import { cycleRoutes } from './routes/cycles.js'
 
@@ -46,10 +42,6 @@ app.use('/api/tasks', taskRoutes())
 app.use('/api/projects', projectRoutes())
 app.use('/api/labels', labelRoutes())
 app.use('/api/sections', sectionRoutes())
-app.use('/api/chat', chatRoutes())
-app.use('/api/chat', aiRoutes())       // POST /api/chat/stream (native DeepSeek)
-app.use('/api/memories', memoriesRoutes())
-app.use('/api/agents-doc', agentsDocRoutes())
 app.use('/api/settings', settingsRoutes())
 app.use('/api/plan', planRoutes())     // POST /api/plan（一次性规划核心，网页 + MCP 共用）
 app.use('/api/cycles', cycleRoutes())

@@ -3,14 +3,11 @@ import { api } from '../api'
 import type { Task, Label } from '../api'
 import { TaskRow } from '../components/TaskRow'
 import { TaskModal } from '../components/TaskModal'
-import { AIPanel } from '../ai/AIPanel'
 
 export function LabelView({ labelId }: { labelId: string }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [label, setLabel] = useState<Label | null>(null)
   const [taskModal, setTaskModal] = useState<string | null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [aiTask, setAiTask] = useState<Task | null>(null)
 
   const fetch = async () => {
     const [ts, lbs] = await Promise.all([api.getTasks(), api.getLabels()])
@@ -42,11 +39,10 @@ export function LabelView({ labelId }: { labelId: string }) {
             <div style={{ fontSize: 13 }}>创建任务时输入 #标签名 即可为任务打标签</div>
           </div>
         ) : (
-          tasks.map(t => <TaskRow key={t.id} task={t} showProject onClick={() => setTaskModal(t.id)} onAIClick={task => { setAiTask(task); setAiOpen(true) }} onDelete={fetch} onToggle={fetch} />)
+          tasks.map(t => <TaskRow key={t.id} task={t} showProject onClick={() => setTaskModal(t.id)} onDelete={fetch} onToggle={fetch} />)
         )}
       </div>
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
-      {aiOpen && <AIPanel projectId={aiTask?.project_id || 'inbox'} refTask={aiTask} layout="float" onClose={() => setAiOpen(false)} />}
     </div>
   )
 }

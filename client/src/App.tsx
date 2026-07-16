@@ -4,7 +4,7 @@ import { api } from './api'
 import { Sidebar } from './components/Sidebar'
 import { SearchOverlay } from './components/SearchOverlay'
 import { TaskModal } from './components/TaskModal'
-import { AIPanel } from './ai/AIPanel'
+import { PlannerBox } from './ai/PlannerBox'
 import { TodayView, InboxView, UpcomingView, CalendarView } from './views/Views'
 import { ProjectView } from './views/ProjectView'
 import { SprintView } from './views/SprintView'
@@ -29,11 +29,8 @@ export default function App() {
   const [route, setRoute] = useState<{ view: string; projectId?: string }>({ view: 'today' })
   const [collapsed, setCollapsed] = useState(false)
   const [taskModal, setTaskModal] = useState<string | null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [aiProjectId, setAiProjectId] = useState('inbox')
-  const [aiRefTask] = useState<Task | null>(null)
+  const [plannerOpen, setPlannerOpen] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
-  const [aiLayout, setAiLayout] = useState<'float' | 'sidebar' | 'bottom'>('sidebar')
   const [tasks, setTasks] = useState<Task[]>([])
 
   // Load theme from API on mount
@@ -68,7 +65,7 @@ export default function App() {
 
   useHotkeys({
     'mod+k': () => setShowSearch(true),
-    'mod+/': () => setAiOpen((o) => !o),
+    'mod+/': () => setPlannerOpen((o) => !o),
     't': () => setRoute({ view: 'today' }),
     'i': () => setRoute({ view: 'inbox' }),
     'u': () => setRoute({ view: 'upcoming' }),
@@ -77,7 +74,6 @@ export default function App() {
 
   const openTask = (task: Task) => setTaskModal(task.id)
   const curProjectId = route.projectId || 'inbox'
-  const aiInline = aiOpen && aiLayout === 'sidebar'
 
   const viewContent = () => {
     switch (route.view) {
@@ -103,18 +99,6 @@ export default function App() {
             <kbd style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--bg-inset)', padding: '1px 5px', borderRadius: 4, marginLeft: 6 }}>⌘K</kbd>
           </button>
           <span style={{ flex: 1 }} />
-          {aiOpen && (
-            <div style={{ display: 'flex', gap: 2, background: 'var(--bg-inset)', borderRadius: 8, padding: 3 }}>
-              {[
-                ['float', '浮动'] as const,
-                ['sidebar', '侧栏'] as const,
-                ['bottom', '底栏'] as const,
-              ].map(([l, n]) => (
-                <button key={l} onClick={() => setAiLayout(l)}
-                  style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', background: aiLayout === l ? 'var(--bg-card)' : 'transparent', color: aiLayout === l ? 'var(--text-primary)' : 'var(--text-tertiary)', fontFamily: 'var(--font)' }}>{n}</button>
-              ))}
-            </div>
-          )}
           <button className="btn-ghost" style={{ fontSize: 13 }} title="切换主题" onClick={toggleTheme}>
             <Icon name={theme === 'light' ? 'moon' : 'sun'} size={15} />
           </button>
@@ -124,20 +108,17 @@ export default function App() {
           <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', background: 'var(--bg-content)' }}>
             {viewContent()}
           </div>
-          {aiInline && (
-            <AIPanel layout="sidebar" projectId={aiProjectId} refTask={aiRefTask} onClose={() => setAiOpen(false)} />
-          )}
         </div>
       </div>
 
-      {!aiOpen && (
-        <button className="ai-fab" title="AI 助手 (⌘/)" onClick={() => { setAiProjectId(curProjectId); setAiOpen(true) }}>
+      {!plannerOpen && (
+        <button className="ai-fab" title="AI 规划 (⌘/)" onClick={() => setPlannerOpen(true)}>
           <Icon name="sparkle" size={22} />
         </button>
       )}
 
-      {aiOpen && aiLayout !== 'sidebar' && (
-        <AIPanel layout={aiLayout} projectId={aiProjectId} refTask={aiRefTask} onClose={() => setAiOpen(false)} />
+      {plannerOpen && (
+        <PlannerBox defaultProjectId={curProjectId} onClose={() => setPlannerOpen(false)} onApplied={fetchTasks} />
       )}
 
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetchTasks() }} />}

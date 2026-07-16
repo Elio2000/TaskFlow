@@ -6,7 +6,6 @@ import { taskInWeek } from '../utils/calendarGeom'
 import { Icon } from '../icons'
 import { TaskRow } from '../components/TaskRow'
 import { TaskModal } from '../components/TaskModal'
-import { AIPanel } from '../ai/AIPanel'
 
 const md = (s: string) => `${+s.slice(5, 7)}月${+s.slice(8, 10)}日`
 
@@ -17,8 +16,6 @@ export function SprintView() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [taskModal, setTaskModal] = useState<string | null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [aiTask, setAiTask] = useState<Task | null>(null)
   const [showPicker, setShowPicker] = useState(false)
   const [searchQ, setSearchQ] = useState('')
 
@@ -94,7 +91,7 @@ export function SprintView() {
         ) : sprint.map(t => (
           <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <TaskRow task={t} showProject onClick={() => setTaskModal(t.id)} onAIClick={task => { setAiTask(task); setAiOpen(true) }} onDelete={fetch} onToggle={fetch} />
+              <TaskRow task={t} showProject onClick={() => setTaskModal(t.id)} onDelete={fetch} onToggle={fetch} />
             </div>
             <button className="btn-icon" title="移出本周冲刺" style={{ width: 28, height: 28, flex: 'none', color: 'var(--text-tertiary)' }} onClick={() => setSprint(t.id, false)}>
               <Icon name="x" size={15} />
@@ -103,7 +100,6 @@ export function SprintView() {
         ))}
       </div>
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
-      {aiOpen && <AIPanel projectId={aiTask?.project_id || 'inbox'} refTask={aiTask} layout="float" onClose={() => setAiOpen(false)} />}
     </div>
   )
 }

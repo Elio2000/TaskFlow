@@ -30,8 +30,6 @@ export function seedIfEmpty(db: Database.Database) {
   const insertSection = db.prepare('INSERT INTO sections VALUES (?,?,?,?)')
   const insertLabel = db.prepare('INSERT INTO labels VALUES (?,?,?)')
   const insertTask = db.prepare('INSERT INTO tasks (id,project_id,section_id,parent_id,title,description,due_date,due_time,repeat,priority,labels,reminder,completed,completed_at,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-  const insertMemory = db.prepare('INSERT INTO memories VALUES (?,?,?,?,?)')
-  const insertAgentsDoc = db.prepare('INSERT INTO agents_docs VALUES (?,?,?)')
   const insertSetting = db.prepare('INSERT INTO settings VALUES (?,?)')
 
   const tx = db.transaction(() => {
@@ -78,32 +76,6 @@ export function seedIfEmpty(db: Database.Database) {
     addTask({ project_id: pLife, title: '预约牙医复诊', due_date: todayStr(5), due_time: '10:00', priority: 3, sort_order: 0 })
     addTask({ project_id: pLife, title: '每周买菜', due_date: todayStr(2), repeat: 'weekly', priority: 4, sort_order: 1 })
     addTask({ title: '已完成的示例任务', completed: 1, completed_at: t, sort_order: 9 })
-
-    insertMemory.run(uidGen('mem'), pPaper, '论文目标投 CoRL 2026，截稿日期大约在 9 月中旬。', 'user', t)
-    insertMemory.run(uidGen('mem'), pVLA, '实验集群只有周二/周四晚上空闲，大型训练任务要排在那时候。', 'user', t)
-
-    insertAgentsDoc.run(pPaper, `# AGENTS.md — 论文写作
-
-## 项目概况
-正在写一篇关于 VLA 模型数据收集方法的论文，目标会议 CoRL 2026。
-
-## 当前阶段
-方法论章节写作中，实验部分等 VLA 研究项目的结果。
-
-## 协作约定
-- 任务分解时颗粒度控制在半天以内
-- 写作类任务默认标「深度工作」标签
-`, t)
-
-    insertAgentsDoc.run(pVLA, `# AGENTS.md — VLA 研究
-
-## 项目概况
-探索视觉-语言-动作模型的数据高效训练方法。
-
-## 关键约束
-- 集群仅周二/周四晚可用
-- 基线：OpenVLA、RT-2
-`, t)
 
     insertSetting.run('theme', 'light')
   })

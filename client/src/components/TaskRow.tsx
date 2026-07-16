@@ -10,7 +10,6 @@ interface TaskRowProps {
   task: Task
   showProject?: boolean
   onClick?: (task: Task) => void
-  onAIClick?: (task: Task) => void
   onDelete?: () => void
   onToggle?: () => void
   selectable?: boolean
@@ -22,7 +21,7 @@ interface TaskRowProps {
   onMoveTo?: (draggedId: string) => void
 }
 
-export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onToggle, selectable, selected, onSelect, draggable, onMoveTo }: TaskRowProps) {
+export function TaskRow({ task, showProject, onClick, onDelete, onToggle, selectable, selected, onSelect, draggable, onMoveTo }: TaskRowProps) {
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
     await api.deleteTask(task.id)
@@ -53,18 +52,6 @@ export function TaskRow({ task, showProject, onClick, onAIClick, onDelete, onTog
         <TaskChips task={task} showProject={showProject} />
       </div>
       <div className="task-actions" style={{ paddingTop: 2 }}>
-        <button
-          className="btn-icon"
-          {...noDrag}
-          style={{ width: 26, height: 26 }}
-          onClick={(e) => {
-            e.stopPropagation()
-            onAIClick && onAIClick(task)
-          }}
-          title="AI 处理"
-        >
-          <Icon name="sparkle" size={14} style={{ color: 'var(--ai)' }} />
-        </button>
         <button
           className="btn-icon"
           {...noDrag}

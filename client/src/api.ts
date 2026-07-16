@@ -32,18 +32,35 @@ export interface Task {
   sort_order: number; created_at: string; updated_at: string;
 }
 
-export interface Conversation {
-  id: string; project_id: string; title: string; summary: string | null;
-  created_at: string; updated_at: string;
+/* ============ 一次性规划（POST /api/plan）的判别联合 ============ */
+
+export interface PlanProposal {
+  op: 'create' | 'update' | 'complete' | 'delete';
+  title?: string | null;
+  task_id?: string;
+  due_date?: string | null;
+  due_time?: string | null;
+  priority?: number | null;
+  description?: string | null;
+  [key: string]: unknown; // 服务端 schema 允许未知字段透传（向后兼容）
 }
 
-export interface Message {
-  id: string; conversation_id: string; role: string; content: string;
-  refs: string; proposals: string | null; proposals_applied: number; created_at: string;
-}
+export interface PlanQuestion { q: string; options: string[] }
 
-export interface Memory {
-  id: string; project_id: string; content: string; source: string; created_at: string;
+export interface PlanMeta { model: string; latencyMs: number; retries: number; repaired: boolean }
+
+export type PlanResult =
+  | { type: 'proposals'; proposals: PlanProposal[]; meta: PlanMeta }
+  | { type: 'questions'; questions: PlanQuestion[]; meta: PlanMeta }
+  | { type: 'error'; error: string; meta: PlanMeta }
+
+export interface PlanRequest {
+  brain_dump: string;
+  answers?: string[];
+  project_id?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
 }
 
 // Projects
@@ -78,23 +95,18 @@ export const api = {
   bulkUpdate: (ids: string[], updates: Partial<Task>) =>
     request('/tasks/bulk', { method: 'POST', body: JSON.stringify({ ids, updates }) }),
 
-  // Conversations
-  getConversations: (projectId: string) => request<Conversation[]>(`/chat/conversations?project_id=${projectId}`),
-  addConversation: (projectId: string, title?: string) => request<Conversation>('/chat/conversations', { method: 'POST', body: JSON.stringify({ project_id: projectId, title }) }),
-  getMessages: (convId: string) => request<Message[]>(`/chat/conversations/${convId}/messages`),
-  addMessage: (convId: string, role: string, content: string, extra?: Record<string, any>) =>
-    request<Message>(`/chat/conversations/${convId}/messages`, { method: 'POST', body: JSON.stringify({ role, content, ...extra }) }),
-  clearMessages: (convId: string) => request(`/chat/conversations/${convId}/clear`, { method: 'POST' }),
-  updateMessage: (msgId: string, patch: Record<string, any>) => request<Message>(`/chat/messages/${msgId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-
-  // Memories
-  getMemories: (projectId: string) => request<Memory[]>(`/memories?project_id=${projectId}`),
-  addMemory: (projectId: string, content: string, source?: string) => request<Memory>('/memories', { method: 'POST', body: JSON.stringify({ project_id: projectId, content, source }) }),
-  deleteMemory: (id: string) => request(`/memories/${id}`, { method: 'DELETE' }),
-
-  // Agents Doc
-  getAgentsDoc: (projectId: string) => request<{ content: string; updated_at: string | null }>(`/agents-doc/${projectId}`),
-  setAgentsDoc: (projectId: string, content: string) => request(`/agents-doc/${projectId}`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  // AI 一次性规划。错误信息在响应体 { error } 里（如 BYOK/Key 缺失的 400），
+  // 这里单独实现以便把它抛给界面，而不是笼统的 "API 400"。
+  plan: async (body: PlanRequest): Promise<PlanResult> => {
+    const res = await fetch(BASE + '/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(data?.error || `API ${res.status}: ${res.statusText}`)
+    return data as PlanResult
+  },
 
   // Settings
   getSetting: (key: string) => request<{ key: string; value: string | null }>(`/settings/${key}`),

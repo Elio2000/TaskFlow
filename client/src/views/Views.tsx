@@ -10,7 +10,6 @@ import { parseTaskLabels } from '../utils/labels'
 import { dragSource, draggedTaskId, noDrag } from '../utils/drag'
 import { TaskModal } from '../components/TaskModal'
 import { QuickComposer } from '../components/QuickComposer'
-import { AIPanel } from '../ai/AIPanel'
 import { BulkActionBar } from '../components/BulkActionBar'
 import { DisplayMenu, type DisplayFilters } from '../components/DisplayMenu'
 
@@ -62,9 +61,9 @@ function EmptyState({ icon, text, sub }: { icon: string; text: string; sub?: str
   )
 }
 
-function TaskGroup({ title, tasks, showProject, onOpenTask, onAIClick, onDelete, onToggle, defaultOpen = true, accent }: {
+function TaskGroup({ title, tasks, showProject, onOpenTask, onDelete, onToggle, defaultOpen = true, accent }: {
   title: string; tasks: Task[]; showProject?: boolean;
-  onOpenTask: (t: Task) => void; onAIClick: (t: Task) => void; onDelete: () => void; onToggle: () => void;
+  onOpenTask: (t: Task) => void; onDelete: () => void; onToggle: () => void;
   defaultOpen?: boolean; accent?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -75,7 +74,7 @@ function TaskGroup({ title, tasks, showProject, onOpenTask, onAIClick, onDelete,
         <span style={{ fontSize: 13, fontWeight: 600, color: accent || 'var(--text-secondary)' }}>{title}</span>
         <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{tasks.length}</span>
       </button>
-      {open && tasks.map((t) => <TaskRow key={t.id} task={t} showProject={showProject} onClick={() => onOpenTask(t)} onAIClick={() => onAIClick(t)} onDelete={onDelete} onToggle={onToggle} />)}
+      {open && tasks.map((t) => <TaskRow key={t.id} task={t} showProject={showProject} onClick={() => onOpenTask(t)} onDelete={onDelete} onToggle={onToggle} />)}
     </div>
   )
 }
@@ -87,8 +86,6 @@ export function InboxView() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [sections, setSections] = useState<Section[]>([])
   const [taskModal, setTaskModal] = useState<string | null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [aiTask, setAiTask] = useState<Task | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
   const [filters, setFilters] = useState<DisplayFilters>({ labels: [], priority: null, completed: false, sort: 'manual' })
@@ -125,7 +122,7 @@ export function InboxView() {
   const renderRow = (t: Task) => (
     <TaskRow key={t.id} task={t} selectable selected={selectedIds.has(t.id)} onSelect={toggleSelect}
       draggable onMoveTo={(draggedId) => handleListMove(draggedId, t.id)}
-      onClick={() => setTaskModal(t.id)} onAIClick={(task) => { setAiTask(task); setAiOpen(true) }} onDelete={fetch} onToggle={fetch} />
+      onClick={() => setTaskModal(t.id)} onDelete={fetch} onToggle={fetch} />
   )
 
   return (
@@ -180,7 +177,6 @@ export function InboxView() {
         </>
       )}
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
-      {aiOpen && <AIPanel projectId={aiTask?.project_id || 'inbox'} refTask={aiTask} layout="float" onClose={() => setAiOpen(false)} />}
       {selectedIds.size > 0 && viewMode === 'list' && (
         <BulkActionBar ids={[...selectedIds]} onDone={() => { setSelectedIds(new Set()); fetch() }} onClear={() => setSelectedIds(new Set())} />
       )}
@@ -194,8 +190,6 @@ export function InboxView() {
 export function TodayView() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [taskModal, setTaskModal] = useState<string | null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [aiTask, setAiTask] = useState<Task | null>(null)
   const [filters, setFilters] = useState<DisplayFilters>({ labels: [], priority: null, completed: false, sort: 'manual' })
   const fetch = () => api.getTasks().then(setTasks)
   useEffect(() => { fetch(); const id = setInterval(fetch, 5000); return () => clearInterval(id) }, [])
@@ -205,19 +199,17 @@ export function TodayView() {
   const overdue = filtered.filter(t => !t.completed && !t.parent_id && t.due_date && t.due_date < today)
   const done = filtered.filter(t => t.completed && t.due_date === today)
   const openTask = (t: Task) => setTaskModal(t.id)
-  const openAI = (t: Task) => { setAiTask(t); setAiOpen(true) }
   return (
     <ViewShell title="今天" subtitle={new Date().toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' })}
       actions={<DisplayMenu filters={filters} onChange={setFilters} />}>
       <QuickComposer projectId="inbox" defaultDueDate={DateU.today()} placeholder="添加今天的任务…" collapsed collapsedLabel="添加任务" autoFocus onDone={fetch} />
-      {overdue.length > 0 && <TaskGroup title="逾期" tasks={overdue} showProject onOpenTask={openTask} onAIClick={openAI} onDelete={fetch} onToggle={fetch} accent="var(--p1)" />}
+      {overdue.length > 0 && <TaskGroup title="逾期" tasks={overdue} showProject onOpenTask={openTask} onDelete={fetch} onToggle={fetch} accent="var(--p1)" />}
       {todayTasks.length > 0
-        ? <TaskGroup title="今天" tasks={todayTasks} showProject onOpenTask={openTask} onAIClick={openAI} onDelete={fetch} onToggle={fetch} />
+        ? <TaskGroup title="今天" tasks={todayTasks} showProject onOpenTask={openTask} onDelete={fetch} onToggle={fetch} />
         : overdue.length === 0 && <EmptyState icon="today" text="今天没有安排" sub="好好休息，或者添加些任务" />
       }
-      {done.length > 0 && <TaskGroup title="已完成" tasks={done} showProject onOpenTask={openTask} onAIClick={openAI} onDelete={fetch} onToggle={fetch} defaultOpen={false} />}
+      {done.length > 0 && <TaskGroup title="已完成" tasks={done} showProject onOpenTask={openTask} onDelete={fetch} onToggle={fetch} defaultOpen={false} />}
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
-      {aiOpen && <AIPanel projectId={aiTask?.project_id || 'inbox'} refTask={aiTask} layout="float" onClose={() => setAiOpen(false)} />}
     </ViewShell>
   )
 }
@@ -229,8 +221,6 @@ export function UpcomingView() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [baseDate, setBaseDate] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })
   const [taskModal, setTaskModal] = useState<string | null>(null)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [aiTask, setAiTask] = useState<Task | null>(null)
   const [dragOverDate, setDragOverDate] = useState<string | null>(null)
   const fetch = () => api.getTasks().then(setTasks)
   useEffect(() => { fetch(); const id = setInterval(fetch, 5000); return () => clearInterval(id) }, [])
@@ -245,7 +235,6 @@ export function UpcomingView() {
     return { date: ds, label: DateU.human(ds), weekday: '周' + DateU.weekdayCN(ds), dayTasks: tasks.filter(t => t.due_date === ds && !t.completed && !t.parent_id) }
   })
   const openTask = (t: Task) => setTaskModal(t.id)
-  const openAI = (t: Task) => { setAiTask(t); setAiOpen(true) }
   return (
     <ViewShell title="即将到来"
       actions={<span style={{ display: 'flex', gap: 6 }}>
@@ -264,13 +253,12 @@ export function UpcomingView() {
           </div>
           {day.dayTasks.length === 0
             ? <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', padding: '4px 0 4px 4px' }}>暂无任务</div>
-            : day.dayTasks.map((t) => <TaskRow key={t.id} task={t} draggable showProject onClick={() => openTask(t)} onAIClick={() => openAI(t)} onDelete={fetch} onToggle={fetch} />)
+            : day.dayTasks.map((t) => <TaskRow key={t.id} task={t} draggable showProject onClick={() => openTask(t)} onDelete={fetch} onToggle={fetch} />)
           }
           <QuickComposer projectId="inbox" defaultDueDate={day.date} placeholder="为这天添加任务…" collapsed collapsedLabel="为这天添加任务" autoFocus onDone={fetch} />
         </div>
       ))}
       {taskModal && <TaskModal taskId={taskModal} onClose={() => { setTaskModal(null); fetch() }} />}
-      {aiOpen && <AIPanel projectId={aiTask?.project_id || 'inbox'} refTask={aiTask} layout="float" onClose={() => setAiOpen(false)} />}
     </ViewShell>
   )
 }
