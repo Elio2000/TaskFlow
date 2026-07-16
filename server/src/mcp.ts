@@ -36,6 +36,21 @@ async function apiFetch(path: string, init?: RequestInit): Promise<any> {
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] })
 const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true })
 
+/* 写操作串行队列 —— MCP SDK 对并发到达的 tools/call 是 fire-and-forget 派发
+   （protocol 层的 _onrequest 不 await handler），客户端批量注入时 create_task
+   会抢在 create_project 完成前解析项目而失败（复现测试：tests/mcpSerial.test.mjs）。
+   把全部「读改写」型工具的 handler 串到一条 promise 链上，保证完成有序。
+   取舍：只读工具（list_*）无副作用、plan_tasks 是数十秒级长任务且其 apply
+   阶段本身逐条同步落库，均不入队，避免无谓阻塞。 */
+let writeTail: Promise<unknown> = Promise.resolve()
+function serialWrite<A extends unknown[], R>(fn: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
+  return (...args: A) => {
+    const run = writeTail.then(() => fn(...args), () => fn(...args))
+    writeTail = run.catch(() => {})
+    return run
+  }
+}
+
 function todayISO(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -79,7 +94,7 @@ server.registerTool('create_task', {
     description: z.string().optional(),
     in_sprint: z.boolean().optional(),
   },
-}, async ({ title, project, due_date, due_time, priority, description, in_sprint }) => {
+}, serialWrite(async ({ title, project, due_date, due_time, priority, description, in_sprint }) => {
   try {
     let project_id = 'inbox'
     if (project) {
@@ -97,7 +112,7 @@ server.registerTool('create_task', {
     const t = await apiFetch('/tasks', { method: 'POST', body: JSON.stringify(body) })
     return ok(`已创建任务：${formatTask(t)}`)
   } catch (e: any) { return fail(e.message) }
-})
+}))
 
 server.registerTool('update_task', {
   title: '修改任务',
@@ -112,7 +127,7 @@ server.registerTool('update_task', {
     project: z.string().optional(),
     in_sprint: z.boolean().optional(),
   },
-}, async ({ id, project, in_sprint, ...rest }) => {
+}, serialWrite(async ({ id, project, in_sprint, ...rest }) => {
   try {
     const patch: any = {}
     for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v
@@ -127,13 +142,13 @@ server.registerTool('update_task', {
     const t = await apiFetch(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
     return ok(`已更新：${formatTask(t)}`)
   } catch (e: any) { return fail(e.message) }
-})
+}))
 
 server.registerTool('complete_task', {
   title: '完成任务',
   description: '按 id 把任务标记为完成。重复任务会自动推进到下一个周期。',
   inputSchema: { id: z.string() },
-}, async ({ id }) => {
+}, serialWrite(async ({ id }) => {
   try {
     const task = await apiFetch(`/tasks/${id}`)
     if (!task) return fail(`找不到任务 id=${id}`)
@@ -141,27 +156,27 @@ server.registerTool('complete_task', {
     const updated = await apiFetch(`/tasks/${id}/toggle`, { method: 'PATCH' })
     return ok(`已完成：${formatTask(updated)}`)
   } catch (e: any) { return fail(e.message) }
-})
+}))
 
 server.registerTool('delete_task', {
   title: '删除任务',
   description: '按 id 永久删除任务（含其子任务）。不可恢复，请谨慎使用。',
   inputSchema: { id: z.string() },
-}, async ({ id }) => {
+}, serialWrite(async ({ id }) => {
   try { await apiFetch(`/tasks/${id}`, { method: 'DELETE' }); return ok(`已删除任务 id=${id}`) }
   catch (e: any) { return fail(e.message) }
-})
+}))
 
 server.registerTool('set_sprint', {
   title: '加入/移出本周冲刺',
   description: '按 id 把任务加入(on=true)或移出(on=false)本周冲刺。',
   inputSchema: { id: z.string(), on: z.boolean() },
-}, async ({ id, on }) => {
+}, serialWrite(async ({ id, on }) => {
   try {
     const t = await apiFetch(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ in_sprint: on ? 1 : 0 }) })
     return ok(`${on ? '已加入' : '已移出'}本周冲刺：${formatTask(t)}`)
   } catch (e: any) { return fail(e.message) }
-})
+}))
 
 server.registerTool('list_projects', {
   title: '列出项目',
@@ -179,12 +194,12 @@ server.registerTool('create_project', {
   title: '创建项目',
   description: '创建一个新项目。',
   inputSchema: { name: z.string(), color: z.string().optional() },
-}, async ({ name, color }) => {
+}, serialWrite(async ({ name, color }) => {
   try {
     const p = await apiFetch('/projects', { method: 'POST', body: JSON.stringify({ name, color }) })
     return ok(`已创建项目：${p.name} (id:${p.id})`)
   } catch (e: any) { return fail(e.message) }
-})
+}))
 
 /* 按 op 逐条把 proposals 通过既有 REST 落库，返回成功/失败摘要（apply=true 出口）。 */
 async function applyProposals(proposals: Proposal[], projectId: string | null): Promise<string> {
