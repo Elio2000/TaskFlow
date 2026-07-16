@@ -73,6 +73,12 @@ The former chat panel + SSE stream was deliberately **collapsed into a one-shot 
   - `conversations` / `messages` / `memories` / `agents_docs` tables are leftovers of the removed chat panel (collapsed into the one-shot planner). **Kept on purpose** (no destructive migration, old data preserved) but they have **no read/write paths** — their routes (`chat.ts`, `ai.ts`, `memories.ts`, `agentsDoc.ts`) were deleted. Don't build on them.
   - `cycles` + `cycle_tasks` tables and `/api/cycles` routes are leftovers from a removed "Cycles" view, superseded by `in_sprint` / `SprintView`. Safe to ignore; can be removed.
 
+## 评测（eval/）
+
+- **Layer 1 golden 回放（CI 门禁）**：`eval/fixtures/*.json` 固化「模型原始输出 → `parsePlanOutput` 预期结果」，`tests/planEval.test.mjs` 随 `npm test` 全量回放（确定性、零 key）。改 `planLib.ts` 的解析/校验行为时，行为变化必须先体现在 fixture 的 `expect` 里（golden 挂红是功能不是事故）；新增跑偏形态先加 fixture 再改代码。
+- **Layer 2 live 基准（对照实验，非门禁）**：`npm run eval:live`（`eval/run-live.mjs`，纯 Node 零依赖）用 `eval/cases.jsonl` 标注集打真实 `/api/plan`，DeepSeek 与本地 Ollama 对照；provider 缺席自动 skip 并如实写入 `eval/REPORT.md`（入库），`eval/results/*.jsonl` 逐条结果不入库。
+- 指标口径、expect DSL、加用例规范见 `eval/README.md`；fixtures/cases 必须手工撰写、有真实感，禁止占位符。新增第三种协议时，评测侧同步加对应 golden fixture 组。
+
 ## Environment variables
 
 All optional — the app runs with none (web BYOK). Copy `.env.example` → `.env` only to override defaults.

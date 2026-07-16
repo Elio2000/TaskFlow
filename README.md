@@ -67,6 +67,10 @@ npm run dev   # 同时启动 Vite(5173) 和后端(3001)，前端通过代理访�
 npm test      # 纯函数单元测试（日期/拖拽几何/MCP 过滤/规划解析校验等）
 ```
 
+### 评测（evals）
+
+AI 规划协议有两层评测：**golden 回放**——`eval/fixtures/` 里 35 个手写的真实跑偏形态（裸数组、畸形 JSON、嵌套围栏陷阱……）确定性回放解析层，随 `npm test` 进 CI 门禁；**live 基准**——`npm run eval:live` 在同一份标注集上对照 DeepSeek 与本地 Ollama 小模型的澄清触发准确率、首轮解析成功率与修复救回率，无 Key / 无 Ollama 时优雅跳过。方法论、指标口径与最近一次报告见 [eval/README.md](eval/README.md) 与 [eval/REPORT.md](eval/REPORT.md)。
+
 ## 数据与隐私
 
 - 所有任务、项目数据存在本地 SQLite：`data/todo.sqlite3`
