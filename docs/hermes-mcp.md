@@ -26,7 +26,7 @@ mcp_servers:
     env:
       TASKFLOW_API: "http://localhost:3001/api"
     tools:
-      include: [list_tasks, create_task, update_task, complete_task, list_projects, create_project]
+      include: [list_tasks, create_task, update_task, complete_task, list_projects, create_project, plan_tasks]
 ```
 
 - 路径换成你自己的仓库绝对路径。
@@ -62,8 +62,34 @@ cd server && npm run build:mcp     # 产出 dist/mcp.js（dist/ 已 gitignore）
 | `delete_task` | 删除任务（含子任务，不可恢复） |
 | `set_sprint` | 加入/移出本周冲刺 |
 | `list_projects` / `create_project` | 列/建项目 |
+| `plan_tasks` | **AI 一次性规划**：倒一段想法进去，TaskFlow 用自己的上下文（任务快照/项目/agent_rules/日期）生成计划；见下节 |
 
 相对日期（“明天”“本周五”）由 Hermes 侧的模型折算成绝对日期再调用；`project` 可传项目名（自动解析成 id）或 id。
+
+## plan_tasks：让 TaskFlow 自己做规划
+
+其余工具是「你（或 Hermes 的模型）想好了再落库」；`plan_tasks` 反过来——把**没想清楚的一段话**交给 TaskFlow 内置的规划核心（`POST /api/plan`），它基于应用自身状态（现有任务、项目、用户 agent_rules、今天的日期）产出结构化计划，调用方不必先 `list_tasks` 拉全量再自己推理。
+
+### 前提：服务端配置 AI Key（headless 回退）
+
+网页端的 AI 是 BYOK（Key 在浏览器 localStorage、逐请求携带），但 MCP 调用方没有浏览器。为此 `/api/plan` 提供**显式 opt-in** 的服务端回退：在 TaskFlow 的 `.env`（仓库根目录）里配置：
+
+```bash
+TASKFLOW_AI_KEY=sk-...        # 你的 DeepSeek（或其他 OpenAI 兼容服务）Key
+# 可选：DEEPSEEK_BASE_URL / AI_PLANNER_MODEL 改服务商与默认模型
+```
+
+然后重启 TaskFlow（`npm start`）。没配 Key 时调用 `plan_tasks` 会得到清晰的中文报错，不会卡住。**Key 只进服务端进程环境，别提交进仓库。**
+
+### 三段式用法
+
+1. **倒想法**：`plan_tasks({ brain_dump: "下周要交开题报告，还想恢复健身" })`
+   - 信息不足时返回编号的**澄清问题**（带选项）；把每题答案按顺序组成 `answers` 再调一次：
+     `plan_tasks({ brain_dump: "…", answers: ["晚上", "每周三次"] })`
+2. **审阅**：默认 `apply=false`，返回完整计划（逐条 op/标题/日期/优先级），**不落库**。
+3. **落库**：确认后带 `apply: true` 用相同参数再调一次，逐条通过 REST 写入并返回成功/失败摘要。注意 apply 那次会**重新生成**计划再执行（一次性工具无状态，不缓存上一次的计划）。
+
+`project` 参数（项目名或 id）决定两件事：规划时喂给模型的任务快照来自哪个项目、`create` 的新任务落到哪个项目（缺省收件箱）。
 
 ## 验证
 

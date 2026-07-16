@@ -9,6 +9,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { resolveProjectId, filterTasks, formatTask, type TaskFilter } from './mcpLib.js'
+import { formatProposalLine, formatQuestionLines, type Proposal } from './planLib.js'
 
 const API = (process.env.TASKFLOW_API || 'http://localhost:3001/api').replace(/\/+$/, '')
 const log = (...a: unknown[]) => console.error('[taskflow-mcp]', ...a)
@@ -176,6 +177,95 @@ server.registerTool('create_project', {
   try {
     const p = await apiFetch('/projects', { method: 'POST', body: JSON.stringify({ name, color }) })
     return ok(`已创建项目：${p.name} (id:${p.id})`)
+  } catch (e: any) { return fail(e.message) }
+})
+
+/* 按 op 逐条把 proposals 通过既有 REST 落库，返回成功/失败摘要（apply=true 出口）。 */
+async function applyProposals(proposals: Proposal[], projectId: string | null): Promise<string> {
+  const lines: string[] = []
+  const fails: string[] = []
+  for (const p of proposals) {
+    const f = p as Record<string, any>
+    try {
+      if (p.op === 'create') {
+        const body: any = { title: f.title, project_id: projectId || 'inbox' }
+        if (f.due_date) body.due_date = f.due_date
+        if (f.due_time) body.due_time = f.due_time
+        if (f.priority != null) body.priority = f.priority
+        if (f.description) body.description = f.description
+        const t = await apiFetch('/tasks', { method: 'POST', body: JSON.stringify(body) })
+        lines.push(`已创建：${formatTask(t)}`)
+      } else if (p.op === 'update') {
+        const { op: _op, task_id, ...patch } = f
+        const t = await apiFetch(`/tasks/${task_id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+        lines.push(`已更新：${formatTask(t)}`)
+      } else if (p.op === 'complete') {
+        const task = await apiFetch(`/tasks/${f.task_id}`)
+        if (!task) throw new Error(`找不到任务 id=${f.task_id}`)
+        if (task.completed) {
+          lines.push(`已经是完成状态：${task.title}`)
+        } else {
+          const t = await apiFetch(`/tasks/${f.task_id}/toggle`, { method: 'PATCH' })
+          lines.push(`已完成：${formatTask(t)}`)
+        }
+      } else {
+        await apiFetch(`/tasks/${f.task_id}`, { method: 'DELETE' })
+        lines.push(`已删除任务 id=${f.task_id}`)
+      }
+    } catch (e: any) {
+      fails.push(`${formatProposalLine(p)} → ${e?.message || e}`)
+    }
+  }
+  let out = `已落库 ${lines.length}/${proposals.length} 条：\n${lines.join('\n')}`
+  if (fails.length) out += `\n\n失败 ${fails.length} 条：\n${fails.join('\n')}`
+  return out
+}
+
+server.registerTool('plan_tasks', {
+  title: 'AI 规划任务',
+  description:
+    '把一段自然语言想法（brain_dump）交给 TaskFlow 内置的 AI 规划核心，基于应用自身上下文（现有任务快照、项目、用户 agent_rules、今天的日期折算）生成结构化任务计划——调用方不必自己拉全量任务再推理。返回三种结果之一：questions=信息不足，先回答澄清问题（把每题答案按顺序放进 answers 数组再调一次）；proposals=完整计划（apply=false 时仅供审阅，不落库）；确认后带 apply=true 再调一次，会按当次重新生成的计划逐条落库并返回摘要。project 可传项目名或 id（决定规划上下文与新任务归属）。需要 TaskFlow 服务端配置 TASKFLOW_AI_KEY（headless 回退；网页端为 BYOK）。',
+  inputSchema: {
+    brain_dump: z.string(),
+    answers: z.array(z.string()).optional(),
+    project: z.string().optional(),
+    apply: z.boolean().optional(),
+  },
+}, async ({ brain_dump, answers, project, apply }) => {
+  try {
+    let projectId: string | null = null
+    if (project) {
+      const projects = await apiFetch('/projects')
+      projectId = resolveProjectId(projects, project)
+      if (!projectId) return fail(`找不到项目「${project}」。现有项目：${projects.map((p: any) => p.name).join('、')}`)
+    }
+
+    const r = await apiFetch('/plan', {
+      method: 'POST',
+      body: JSON.stringify({ brain_dump, answers, project_id: projectId || undefined }),
+    })
+
+    if (r.type === 'error') return fail(`AI 规划失败：${r.error}`)
+
+    if (r.type === 'questions') {
+      return ok(
+        `需要先澄清以下问题（把每题的回答按顺序放进 answers 数组，再调一次 plan_tasks）：\n` +
+        formatQuestionLines(r.questions),
+      )
+    }
+
+    // r.type === 'proposals'
+    const proposals: Proposal[] = r.proposals
+    const metaLine = `（模型 ${r.meta?.model} · ${((r.meta?.latencyMs ?? 0) / 1000).toFixed(1)}s${r.meta?.repaired ? ' · 经修复重试' : ''}）`
+    if (!apply) {
+      return ok(
+        `已生成计划（共 ${proposals.length} 条，未落库）：\n` +
+        proposals.map((p, i) => `${i + 1}. ${formatProposalLine(p)}`).join('\n') +
+        `\n${metaLine}\n确认后用相同参数加 apply=true 再调一次即可落库（会按当次重新生成的计划执行）。`,
+      )
+    }
+    const summary = await applyProposals(proposals, projectId)
+    return ok(`${summary}\n${metaLine}`)
   } catch (e: any) { return fail(e.message) }
 })
 
