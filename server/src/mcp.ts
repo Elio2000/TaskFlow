@@ -21,7 +21,13 @@ async function apiFetch(path: string, init?: RequestInit): Promise<any> {
   } catch (e: any) {
     throw new Error(`无法连接 TaskFlow（${API}）。请确认 TaskFlow 已运行（npm start，端口 3001）。原始错误：${e?.message || e}`)
   }
-  if (!res.ok) throw new Error(`TaskFlow API ${res.status}: ${(await res.text().catch(() => '')) || res.statusText}`)
+  if (!res.ok) {
+    const txt = (await res.text().catch(() => '')) || res.statusText
+    // REST 错误体统一是 { error: "中文提示" }，直接把提示透出，别让调用方看到原始 JSON
+    let msg = txt
+    try { msg = JSON.parse(txt).error || txt } catch {}
+    throw new Error(`TaskFlow API ${res.status}: ${msg}`)
+  }
   if (res.status === 204) return null
   const txt = await res.text()
   return txt ? JSON.parse(txt) : null
