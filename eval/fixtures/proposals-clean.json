@@ -1,0 +1,115 @@
+[
+  {
+    "id": "clean-four-ops",
+    "category": "proposals-clean",
+    "note": "一条回复里四种 op 全出现：新建实验任务、顺延旧任务、勾掉已办、删掉过期占位。",
+    "raw": [
+      "好的，结合你现有的任务快照，这周这样调整：",
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"重画小论文图3/图4为矢量图\",\"due_date\":\"2026-07-17\",\"due_time\":\"15:00\",\"priority\":1,\"description\":\"matplotlib 导出 PDF，发导师邮箱\"},",
+      " {\"op\":\"update\",\"task_id\":\"tsk_9d284377-1d27-43\",\"due_date\":\"2026-07-18\",\"due_time\":\"10:00\"},",
+      " {\"op\":\"complete\",\"task_id\":\"tsk_a677daad-7693-47\"},",
+      " {\"op\":\"delete\",\"task_id\":\"tsk_f04e1a4a-22fc-4b\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "proposals",
+      "count": 4,
+      "ops": ["create", "update", "complete", "delete"],
+      "items": [
+        { "at": 0, "fields": { "title": "重画小论文图3/图4为矢量图", "due_date": "2026-07-17", "priority": 1 } },
+        { "at": 1, "fields": { "task_id": "tsk_9d284377-1d27-43", "due_time": "10:00" } },
+        { "at": 3, "fields": { "op": "delete", "task_id": "tsk_f04e1a4a-22fc-4b" } }
+      ]
+    }
+  },
+  {
+    "id": "clean-create-full-fields",
+    "category": "proposals-clean",
+    "note": "单条 create，全字段（日期/时间/优先级/描述）。",
+    "raw": [
+      "收到，帮你把面试准备拆成一条带截止的任务：",
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"准备 AI infra 实习一面：过一遍往年面经\",\"due_date\":\"2026-07-20\",\"due_time\":\"21:00\",\"priority\":2,\"description\":\"重点：K8s 调度、RDMA、集合通信；预留 2 小时\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "proposals",
+      "count": 1,
+      "items": [
+        { "at": 0, "fields": { "op": "create", "title": "准备 AI infra 实习一面：过一遍往年面经", "due_date": "2026-07-20", "due_time": "21:00", "priority": 2 } }
+      ]
+    }
+  },
+  {
+    "id": "clean-chatter-before-and-after",
+    "category": "proposals-clean",
+    "note": "块外前后都有话（协议允许一两句，超出部分也应被无视，只认块内 JSON）。",
+    "raw": [
+      "这个安排有点紧，我建议把跑步挪到晚上，白天专注写作。",
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"上午写博士论文第2章方法部分\",\"due_date\":\"2026-07-17\",\"due_time\":\"09:30\",\"priority\":2},{\"op\":\"create\",\"title\":\"晚上环校区慢跑 5km\",\"due_date\":\"2026-07-17\",\"due_time\":\"20:00\",\"priority\":4}]",
+      "```",
+      "如果晚上有组会冲突，跑步可以顺延到 9 点半开始。"
+    ],
+    "expect": {
+      "type": "proposals",
+      "count": 2,
+      "ops": ["create", "create"],
+      "items": [{ "at": 1, "fields": { "title": "晚上环校区慢跑 5km", "due_time": "20:00" } }]
+    }
+  },
+  {
+    "id": "clean-unknown-field-in-sprint",
+    "category": "proposals-clean",
+    "note": "协议未列出的字段（in_sprint）必须原样透传给 REST，不能被 schema 吞掉——向后兼容红线。",
+    "raw": [
+      "这两件都是本周冲刺的重点，我顺手打了冲刺标记：",
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"完成 MCP 串行化 PR 的 review 修改\",\"due_date\":\"2026-07-17\",\"priority\":1,\"in_sprint\":1},{\"op\":\"create\",\"title\":\"跑通全部单测并合并\",\"due_date\":\"2026-07-18\",\"priority\":2,\"in_sprint\":1}]",
+      "```"
+    ],
+    "expect": {
+      "type": "proposals",
+      "count": 2,
+      "items": [
+        { "at": 0, "fields": { "in_sprint": 1, "priority": 1 } },
+        { "at": 1, "fields": { "in_sprint": 1, "title": "跑通全部单测并合并" } }
+      ]
+    }
+  },
+  {
+    "id": "clean-multi-create-backward-plan",
+    "category": "proposals-clean",
+    "note": "典型「倒排时间线」产物：三条 create 有先后依赖，描述里带执行细节。",
+    "raw": [
+      "rebuttal 时间线帮你倒排好了，20 号截止前留了半天缓冲：",
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"跑完 rebuttal 补充实验（两个对比基线）\",\"due_date\":\"2026-07-18\",\"due_time\":\"09:00\",\"priority\":1,\"description\":\"跑完把结果表截图丢进共享文档\"},{\"op\":\"create\",\"title\":\"写 response 初稿并发导师过目\",\"due_date\":\"2026-07-19\",\"due_time\":\"14:00\",\"priority\":1},{\"op\":\"create\",\"title\":\"过终稿并在系统提交 rebuttal\",\"due_date\":\"2026-07-20\",\"due_time\":\"10:00\",\"priority\":1,\"description\":\"截止 23:59，放上午提防网络抽风\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "proposals",
+      "count": 3,
+      "ops": ["create", "create", "create"],
+      "items": [{ "at": 2, "fields": { "due_date": "2026-07-20", "due_time": "10:00" } }]
+    }
+  },
+  {
+    "id": "clean-complete-update-mix",
+    "category": "proposals-clean",
+    "note": "对既有任务的维护型输出：complete + update（改标题顺便改截止）。",
+    "raw": [
+      "昨天的两条我帮你收尾：跑步勾掉，周报截止顺延到明晚十点。",
+      "```proposals",
+      "[{\"op\":\"complete\",\"task_id\":\"tsk_1c9f20aa-8f3e-4d\"},{\"op\":\"update\",\"task_id\":\"tsk_77b0e2c1-55aa-49\",\"title\":\"写并提交本周周报\",\"due_date\":\"2026-07-17\",\"due_time\":\"22:00\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "proposals",
+      "count": 2,
+      "ops": ["complete", "update"],
+      "items": [{ "at": 1, "fields": { "task_id": "tsk_77b0e2c1-55aa-49", "title": "写并提交本周周报", "due_time": "22:00" } }]
+    }
+  }
+]

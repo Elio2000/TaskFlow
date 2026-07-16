@@ -1,0 +1,80 @@
+[
+  {
+    "id": "questions-valid-three",
+    "category": "questions",
+    "note": "标准澄清反问：三题、每题 2-3 个选项（协议上限内）。",
+    "raw": [
+      "我先确认几个关键信息，好把健身计划排得更贴合：",
+      "```questions",
+      "[{\"q\":\"你一般什么时间段有空健身？\",\"options\":[\"早上上班前\",\"午休\",\"晚上下班后\"]},{\"q\":\"目标更偏哪种？\",\"options\":[\"减脂\",\"增肌\",\"恢复运动习惯\"]},{\"q\":\"每周能保证几次？\",\"options\":[\"2 次\",\"3 次\",\"4 次以上\"]}]",
+      "```"
+    ],
+    "expect": {
+      "type": "questions",
+      "count": 3,
+      "items": [
+        { "at": 1, "fields": { "q": "目标更偏哪种？" } },
+        { "at": 2, "fields": { "options": ["2 次", "3 次", "4 次以上"] } }
+      ]
+    }
+  },
+  {
+    "id": "questions-valid-single",
+    "category": "questions",
+    "note": "只差一个关键信息时的单题反问，选项里带兜底项。",
+    "raw": [
+      "只差一个信息就能排：",
+      "```questions",
+      "[{\"q\":\"导师这周哪天有空当面聊毕业安排？\",\"options\":[\"周三下午\",\"周四上午\",\"周五全天\",\"还不确定，先发邮件约\"]}]",
+      "```"
+    ],
+    "expect": {
+      "type": "questions",
+      "count": 1,
+      "items": [{ "at": 0, "fields": { "options": ["周三下午", "周四上午", "周五全天", "还不确定，先发邮件约"] } }]
+    }
+  },
+  {
+    "id": "questions-missing-options",
+    "category": "questions",
+    "note": "缺 options——没有选项前端 QuestionCard 无法渲染，必须拦下走修复。",
+    "raw": [
+      "```questions",
+      "[{\"q\":\"你打算什么时候搬家？\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["questions 校验失败"]
+    }
+  },
+  {
+    "id": "questions-empty-options",
+    "category": "questions",
+    "note": "options 为空数组——和缺失一样不可渲染。",
+    "raw": [
+      "```questions",
+      "[{\"q\":\"预算大概多少？\",\"options\":[]}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["至少要有一个选项"]
+    }
+  },
+  {
+    "id": "questions-json-fence-shape",
+    "category": "questions",
+    "note": "```json 围栏 + q 形状 → 宽容路径也要能归成 questions。",
+    "raw": [
+      "```json",
+      "[{\"q\":\"你想先从哪一章开始写？\",\"options\":[\"方法\",\"实验\",\"相关工作\"]},{\"q\":\"每天固定写作时间定在？\",\"options\":[\"早上 9-11\",\"下午 2-4\",\"晚上 8-10\"]}]",
+      "```"
+    ],
+    "expect": {
+      "type": "questions",
+      "count": 2,
+      "items": [{ "at": 1, "fields": { "q": "每天固定写作时间定在？" } }]
+    }
+  }
+]

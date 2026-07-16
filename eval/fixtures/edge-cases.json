@@ -1,0 +1,105 @@
+[
+  {
+    "id": "both-blocks-proposals-wins",
+    "category": "edge",
+    "note": "两块并存（协议违规）：取可执行的 proposals，问题块丢弃。questions 块故意放在前面，验证与文本顺序无关。",
+    "raw": [
+      "信息基本够了我直接排上，顺带一个不影响执行的小确认：",
+      "```questions",
+      "[{\"q\":\"跑步时长按 40 分钟排可以吗？\",\"options\":[\"可以\",\"改成 30 分钟\"]}]",
+      "```",
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"周三晚力量训练（胸+三头）\",\"due_date\":\"2026-07-15\",\"due_time\":\"20:00\",\"priority\":3},{\"op\":\"create\",\"title\":\"周五晚力量训练（背+二头）\",\"due_date\":\"2026-07-17\",\"due_time\":\"20:00\",\"priority\":3}]",
+      "```"
+    ],
+    "expect": {
+      "type": "proposals",
+      "count": 2,
+      "items": [{ "at": 0, "fields": { "title": "周三晚力量训练（胸+三头）" } }]
+    }
+  },
+  {
+    "id": "empty-output",
+    "category": "edge",
+    "note": "模型返回空串（部分服务商内容过滤后会这样）。",
+    "raw": "",
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["模型输出为空"]
+    }
+  },
+  {
+    "id": "whitespace-only",
+    "category": "edge",
+    "note": "纯空白（空格/换行/制表符）等同于空输出。",
+    "raw": "  \n\n\t  ",
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["模型输出为空"]
+    }
+  },
+  {
+    "id": "apology-no-block",
+    "category": "edge",
+    "note": "只有道歉/说明文字，一个块都没有——典型「模型忘了协议」，应报缺块错误去触发修复轮。",
+    "raw": "抱歉，我目前无法直接为你创建任务。你可以先告诉我这几件事的截止时间，我再帮你安排一个更合理的计划。",
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["没有"]
+    }
+  },
+  {
+    "id": "inline-fence-mention-trap",
+    "category": "edge",
+    "note": "嵌套围栏陷阱 A：正文里 inline 提到 ```proposals```（比如复述协议），非贪婪正则会先匹配到这个空壳，后面真正的块反而读不到 → 现状是 error。固化这个锐边；若未来改进提取器，这里的预期要跟着改。",
+    "raw": [
+      "我会按 ```proposals``` 协议输出计划：",
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"写「MCP 串行化踩坑」博客初稿\",\"due_date\":\"2026-07-19\",\"due_time\":\"10:00\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["proposals 块", "JSON 解析失败"]
+    }
+  },
+  {
+    "id": "nested-fence-in-description",
+    "category": "edge",
+    "note": "嵌套围栏陷阱 B：description 字段值里带 ``` 代码块，非贪婪匹配在字段值中途截断 → JSON 残缺报错。协议上模型不该在字段里放围栏，这里固化解析层的真实行为。",
+    "raw": [
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"整理数据清洗脚本使用说明\",\"description\":\"README 里加示例：```bash\\npython dedup.py --in train.jsonl\\n```\",\"due_date\":\"2026-07-18\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["proposals 块", "JSON 解析失败"]
+    }
+  },
+  {
+    "id": "bare-array-wrong-shape",
+    "category": "edge",
+    "note": "裸数组但元素是字符串（既无 op 也无 q）——宽容路径不该乱猜类型，落到缺块错误。",
+    "raw": "[\"先去健身房\",\"再去买礼物\",\"晚上写周报\"]",
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["没有"]
+    }
+  },
+  {
+    "id": "questions-block-malformed-json",
+    "category": "edge",
+    "note": "questions 块内 JSON 残缺（少右括号）——错误信息要指明是 questions 块，方便修复轮定位。",
+    "raw": [
+      "先确认一下：",
+      "```questions",
+      "[{\"q\":\"聚餐定在哪天？\",\"options\":[\"周五晚\",\"周六晚\"]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["questions 块", "JSON 解析失败"]
+    }
+  }
+]

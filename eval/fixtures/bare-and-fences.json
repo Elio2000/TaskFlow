@@ -1,0 +1,68 @@
+[
+  {
+    "id": "bare-array-no-fence",
+    "category": "bare-fence",
+    "note": "模型最常见的跑偏之一：完全不打围栏，整段输出就是裸 JSON 数组 → 按元素形状（有 op）归为 proposals。",
+    "raw": "[{\"op\":\"create\",\"title\":\"给妈妈打电话提醒取体检报告\",\"due_date\":\"2026-07-17\",\"due_time\":\"16:00\",\"priority\":3}]",
+    "expect": {
+      "type": "proposals",
+      "count": 1,
+      "items": [{ "at": 0, "fields": { "title": "给妈妈打电话提醒取体检报告", "due_time": "16:00" } }]
+    }
+  },
+  {
+    "id": "bare-json-fence",
+    "category": "bare-fence",
+    "note": "用 ```json 围栏而不是 ```proposals（弱模型高频形态）→ 剥围栏后按形状归类。",
+    "raw": [
+      "```json",
+      "[{\"op\":\"create\",\"title\":\"订 8 月 3 日去上海的高铁票\",\"due_date\":\"2026-07-16\",\"priority\":2},{\"op\":\"create\",\"title\":\"订 8/3–8/5 上海酒店（每晚 400 以内）\",\"due_date\":\"2026-07-17\",\"due_time\":\"12:00\",\"priority\":2}]",
+      "```"
+    ],
+    "expect": {
+      "type": "proposals",
+      "count": 2,
+      "ops": ["create", "create"]
+    }
+  },
+  {
+    "id": "bare-json-fence-with-preamble",
+    "category": "bare-fence",
+    "note": "锐边固化：```json 围栏的宽容路径只在输出「以围栏开头」时生效，前面多一句话就救不回来 → error。改这个行为前先改本用例。",
+    "raw": [
+      "帮你安排好了：",
+      "```json",
+      "[{\"op\":\"create\",\"title\":\"清洗训练集重复样本\",\"due_date\":\"2026-07-16\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["没有"]
+    }
+  },
+  {
+    "id": "bare-plain-fence",
+    "category": "bare-fence",
+    "note": "无语言标记的裸 ``` 围栏 → 同样能剥掉并按形状归类。",
+    "raw": [
+      "```",
+      "[{\"op\":\"create\",\"title\":\"把清洗后的数据集更新到 v3 并同步给师弟\",\"due_date\":\"2026-07-16\",\"due_time\":\"20:00\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "proposals",
+      "count": 1
+    }
+  },
+  {
+    "id": "bare-questions-shape",
+    "category": "bare-fence",
+    "note": "裸数组但元素带 q 字段 → 按形状归为 questions（不是只有 proposals 才享受宽容路径）。",
+    "raw": "[{\"q\":\"半马训练从哪周开始排？\",\"options\":[\"本周就开始\",\"下周开始\"]},{\"q\":\"周日长距离你习惯几点出发？\",\"options\":[\"6:30\",\"7:00\",\"7:30\"]}]",
+    "expect": {
+      "type": "questions",
+      "count": 2,
+      "items": [{ "at": 0, "fields": { "q": "半马训练从哪周开始排？" } }]
+    }
+  }
+]

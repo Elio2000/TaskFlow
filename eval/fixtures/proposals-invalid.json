@@ -1,0 +1,159 @@
+[
+  {
+    "id": "malformed-trailing-comma",
+    "category": "invalid",
+    "note": "尾逗号——模型手滑的经典款，JSON.parse 直接炸。",
+    "raw": [
+      "好的，这样排：",
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"续租合同逐条过违约金条款\",\"due_date\":\"2026-07-24\",\"due_time\":\"21:00\",}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["proposals 块", "JSON 解析失败"]
+    }
+  },
+  {
+    "id": "malformed-single-quotes",
+    "category": "invalid",
+    "note": "单引号伪 JSON（Python 字典味儿），弱模型高频。",
+    "raw": [
+      "```proposals",
+      "[{'op':'create','title':'刷完目标公司往年面经'}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["JSON 解析失败"]
+    }
+  },
+  {
+    "id": "malformed-fullwidth-punctuation",
+    "category": "invalid",
+    "note": "全角冒号/逗号混进 JSON——中文模型特有跑偏。",
+    "raw": [
+      "```proposals",
+      "[{\"op\"：\"create\"，\"title\"：\"周六上午写博客初稿\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["JSON 解析失败"]
+    }
+  },
+  {
+    "id": "not-an-array",
+    "category": "invalid",
+    "note": "块内是单个对象不是数组（协议要求数组，哪怕只有一条）。",
+    "raw": [
+      "```proposals",
+      "{\"op\":\"create\",\"title\":\"把周报写完\",\"due_date\":\"2026-07-17\"}",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["不是 JSON 数组"]
+    }
+  },
+  {
+    "id": "op-enum-violation",
+    "category": "invalid",
+    "note": "自创 op（rename）——枚举外的 op 必须被 zod 拦下，不能漏进 REST。",
+    "raw": [
+      "帮你把旧任务改个名：",
+      "```proposals",
+      "[{\"op\":\"rename\",\"task_id\":\"tsk_9d284377-1d27-43\",\"title\":\"改名后的任务\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["proposals 校验失败"]
+    }
+  },
+  {
+    "id": "date-month-out-of-range",
+    "category": "invalid",
+    "note": "2026-13-05：格式对但月份越界。due_date 在 DB 里按字典序比较，放进去会污染排序，必须拦。",
+    "raw": [
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"提交 camera-ready 终稿\",\"due_date\":\"2026-13-05\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["日期必须是"]
+    }
+  },
+  {
+    "id": "date-day-out-of-range",
+    "category": "invalid",
+    "note": "2026-02-32：日越界（32 号不存在于任何月份）。",
+    "raw": [
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"报销上月发票\",\"due_date\":\"2026-02-32\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["日期必须是"]
+    }
+  },
+  {
+    "id": "time-out-of-range",
+    "category": "invalid",
+    "note": "23:99：小时合法但分钟越界。",
+    "raw": [
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"晚上环校区慢跑\",\"due_date\":\"2026-07-17\",\"due_time\":\"23:99\"}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["时间必须是"]
+    }
+  },
+  {
+    "id": "create-missing-title",
+    "category": "invalid",
+    "note": "create 缺 title——没有标题的任务落库就是垃圾数据。",
+    "raw": [
+      "```proposals",
+      "[{\"op\":\"create\",\"due_date\":\"2026-07-18\",\"priority\":2}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["proposals 校验失败", "title"]
+    }
+  },
+  {
+    "id": "priority-out-of-range",
+    "category": "invalid",
+    "note": "priority=5 越界（协议 1-4）。",
+    "raw": [
+      "```proposals",
+      "[{\"op\":\"create\",\"title\":\"回复房东关于续租的消息\",\"priority\":5}]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["proposals 校验失败"]
+    }
+  },
+  {
+    "id": "empty-proposals-array",
+    "category": "invalid",
+    "note": "空数组——「没有可执行操作」不该伪装成一份空计划，应触发修复/报错。",
+    "raw": [
+      "目前没有需要变更的任务。",
+      "```proposals",
+      "[]",
+      "```"
+    ],
+    "expect": {
+      "type": "error",
+      "errorIncludes": ["不能为空"]
+    }
+  }
+]
