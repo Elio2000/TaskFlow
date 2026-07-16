@@ -1,0 +1,26 @@
+{"id":"clear-weekly-report","brain_dump":"每周五都要交周报，这周的还没动笔。明天下午2点开始写，5点前写完发给导师，大概一小时够了。","expect_type":"proposals"}
+{"id":"clear-rebuttal-backward","brain_dump":"ICCAD rebuttal 截止 7 月 20 号 23:59。我打算 18 号跑完补充实验，19 号写完 response 初稿发导师，20 号上午过终稿并提交。帮我落成任务。","expect_type":"proposals"}
+{"id":"clear-gym-fixed-slots","brain_dump":"从明天开始，周一三五晚上 8 点到 9 点去健身房练力量，先把这周和下周的都排上。","expect_type":"proposals"}
+{"id":"clear-errand-pair","brain_dump":"明天上午 10 点去派出所办居住证续签，顺路把楼下驿站的两个快递取了。","expect_type":"proposals"}
+{"id":"clear-interview-prep","brain_dump":"下周三上午 11 点有个 AI infra 实习一面。周一晚上刷完他家往年面经，周二晚 8 点找室友模拟一轮系统设计，面试当天提前半小时调试摄像头和网络。","expect_type":"proposals"}
+{"id":"clear-pr-merge","brain_dump":"今晚 10 点前把 MCP 串行化那个 PR 的 review 意见改完，改完把全量测试跑一遍，明早 9 点合并。","expect_type":"proposals"}
+{"id":"clear-lease-renewal","brain_dump":"房东说续租合同 7 月 25 号前要签。24 号晚上把合同条款过一遍重点看违约金，25 号中午 12 点去中介签字。","expect_type":"proposals"}
+{"id":"clear-trip-booking","brain_dump":"8 月 3 号去上海开会。今天下午把高铁票买了，明天中午 12 点前订好 3 号到 5 号的酒店，预算每晚 400 以内。","expect_type":"proposals"}
+{"id":"clear-dataset-v3","brain_dump":"今天下午写完训练集去重脚本并跑一遍全量，晚上 8 点前把清洗后的数据集打成 v3 版本同步给师弟。","expect_type":"proposals"}
+{"id":"clear-call-mom","brain_dump":"明天下午 4 点给我妈打个电话，提醒她体检报告出来了记得去取。","expect_type":"proposals"}
+{"id":"clear-blog-schedule","brain_dump":"这周日晚上之前把「MCP 工具串行化踩坑记」博客发出去：周六上午 10 点写初稿两小时，周日下午 3 点配图加校对一小时，晚上 8 点发布。","expect_type":"proposals"}
+{"id":"clear-morning-block","brain_dump":"把明天早上排一下：7 点半起床，8 点到 8 点半背单词，9 点前到实验室开始跑实验。","expect_type":"proposals"}
+{"id":"clear-half-marathon","brain_dump":"报了 9 月 21 号的半马，教练给的方案是每周二、周四晚上 7 点各跑 8 公里，周日早上 7 点跑长距离，本周日从 12 公里起步。先把这周的三次训练排上，周日那次备注带两支能量胶。","expect_type":"proposals"}
+{"id":"vague-gym","brain_dump":"最近胖了三公斤，帮我安排一下健身。","expect_type":"questions"}
+{"id":"vague-gift-dad","brain_dump":"下个月我爸生日，得准备个礼物，帮我安排一下。","expect_type":"questions"}
+{"id":"vague-learn-rust","brain_dump":"一直想学 Rust，帮我排个学习计划。","expect_type":"questions"}
+{"id":"vague-paper-backlog","brain_dump":"收藏夹里积了一堆论文没读，帮我安排安排。","expect_type":"questions"}
+{"id":"vague-team-dinner","brain_dump":"老板说找个时间组里聚个餐，让我来组织，帮我列一下要干的事。","expect_type":"questions"}
+{"id":"vague-side-income","brain_dump":"想搞个副业赚点外快，帮我规划一下。","expect_type":"questions"}
+{"id":"vague-moving","brain_dump":"过阵子要搬家，帮我列个搬家计划。","expect_type":"questions"}
+{"id":"vague-spoken-english","brain_dump":"英语口语太差了，想练一练。","expect_type":"questions"}
+{"id":"vague-advisor-talk","brain_dump":"得找导师聊一次毕业的事了。","expect_type":"questions"}
+{"id":"vague-sleep-fix","brain_dump":"最近天天两三点才睡，想把作息调回来。","expect_type":"questions"}
+{"id":"vague-summer-trip","brain_dump":"想趁暑假出去玩几天，顺便拍点照片。","expect_type":"questions"}
+{"id":"vague-new-laptop","brain_dump":"笔记本卡得不行，想换一台新的。","expect_type":"questions"}
+{"id":"vague-thesis-anxiety","brain_dump":"博士论文得开始动了，但还没想好先写哪一章，导师那边也还没给意见，手上还有两个横向项目在跑，感觉时间完全不够用，有点焦虑，帮我理一理接下来该怎么办。","expect_type":"questions"}
