@@ -23,10 +23,10 @@ npm start            # cd server && tsx src/index.ts  → serves client/dist + A
 **Tests:**
 ```bash
 npm test                          # node --test tests/*.test.mjs (pure-function unit tests; Node ≥22 native TS strip)
-node --test tests/calendar.test.mjs   # a single file
+node --test tests/plan.test.mjs   # a single file
 ```
 
-There is **no `.env` requirement** — the app is BYOK (see AI section). The server start script uses `--env-file-if-exists`, so a clean clone runs with zero config.
+There is **no `.env` requirement** — the app is BYOK on the web (see AI section). The server start script uses `--env-file-if-exists`, so a clean clone runs with zero config. `TASKFLOW_AI_KEY` is only needed if headless callers (MCP `plan_tasks`) should be able to use AI.
 
 ## Architecture
 
@@ -35,39 +35,50 @@ Single-person personal planner. One runtime: a **Node/Express backend** that ser
 ### Backend: `server/` (Node + Express + better-sqlite3)
 - Entry: `server/src/index.ts` — Express on **port 3001**; attaches a single shared `db` to every request as `req.db`; mounts routes; serves `client/dist` as static in production.
 - DB: `server/src/db.ts` — better-sqlite3 (synchronous) at **`data/todo.sqlite3`** (repo root), WAL mode, `foreign_keys = ON`. `initDB()` creates tables + runs idempotent migrations + data repairs on boot. `seed.ts` seeds an empty DB.
-- Routes: `server/src/routes/` — `tasks`, `projects`, `labels`, `sections`, `chat`, `ai`, `memories`, `agentsDoc`, `settings`, `cycles`.
+- Routes: `server/src/routes/` — `tasks`, `projects`, `labels`, `sections`, `settings`, `plan`, `cycles`.
+- MCP server: `server/src/mcp.ts` (stdio) — 9 tools as thin wrappers over the REST API (`mcpLib.ts` holds its pure helpers). See `docs/hermes-mcp.md`.
 
 ### Frontend: `client/` (React + TypeScript + Vite)
-- `client/src/App.tsx` — root; **state-based routing** (no router lib), theme, global task state (polled every 5s).
-- `client/src/api.ts` — typed fetch wrappers for all backend REST calls.
+- `client/src/App.tsx` — root; **state-based routing** (no router lib), theme, global task state (polled every 5s); ⌘/ opens the planner.
+- `client/src/api.ts` — typed fetch wrappers for all backend REST calls (incl. `api.plan` + the `PlanResult` discriminated union).
 - `client/src/views/` — `Views.tsx` (Today/Inbox/Upcoming/Calendar), `ProjectView`, `SprintView` (本周冲刺), `LabelView`.
-- `client/src/ai/AIPanel.tsx` — AI 助手 chat panel (float/sidebar/bottom layouts); renders `ProposalCard` / `QuestionCard`.
-- `client/src/components/` — `TaskModal`, `QuickComposer`, `DateMenu`, `TaskRow`, `Sidebar`, etc.
+- `client/src/ai/PlannerBox.tsx` — 一次性 AI 规划框 (modal, in-memory state only); renders `ProposalCard` (逐条/全部采纳) / `QuestionCard` (澄清反问 → answers 重发).
+- `client/src/components/` — `TaskModal`, `QuickComposer`, `DateMenu`, `TaskRow`, `Sidebar`, `SettingsModal` (BYOK provider/model/key), etc.
 - `client/src/utils/calendarGeom.ts` — pure date/drag-geometry functions (see testing convention below).
 
-### AI: `server/src/routes/ai.ts`
-- `POST /api/chat/stream` — DeepSeek Chat Completions via `fetch`, streamed back over SSE.
-- **BYOK-only**: the DeepSeek key arrives in the request body (`apiKey`) per request; there is **no server-side fallback key**. Never commit a key. The client stores it in `localStorage`.
-- System prompt is assembled in `ai.ts`: base role string → optional `settings.agent_rules` override → per-project context (project, `memories`, `agents_docs`, task list) → current date → `PROPOSAL_PROTOCOL` → `QUESTION_PROTOCOL`.
+### AI: one-shot planning core (no chat)
+
+The former chat panel + SSE stream was deliberately **collapsed into a one-shot planning tool**. There is no conversation state anywhere; one implementation serves two exits:
+
+- **Core**: `server/src/plan.ts` — `planTasks(db, input)` assembles the layered system prompt (base role → optional `settings.agent_rules` override → project + task snapshot → date anchor → protocols → one-shot-mode note), makes a **non-streaming** chat completion (60s timeout; one retry with short backoff on network errors/5xx/429), parses + zod-validates the output, and on parse/validation failure does **one repair round** (feeds the raw output + error back, asks for just the fenced block). Returns a discriminated union `{ type: 'proposals'|'questions'|'error', …, meta: { model, latencyMs, retries, repaired } }`.
+- **Pure layer**: `server/src/planLib.ts` — block extraction, JSON parsing, zod schemas (proposals/questions), repair-message construction, review formatting. Unit-tested in `tests/plan.test.mjs`; keep all new parsing/validation logic here.
+- **Protocols**: `server/src/protocols.ts` — `PROPOSAL_PROTOCOL` / `QUESTION_PROTOCOL` prompt constants (the system contract; keep in sync with planLib schemas and PlannerBox rendering).
+- **REST exit**: `POST /api/plan` (`server/src/routes/plan.ts`) — body `{ brain_dump, answers?, project_id?, apiKey?, baseUrl?, model? }`.
+- **Web exit**: `PlannerBox.tsx` — BYOK fields from `localStorage` (`utils/byok.ts` + `providers.ts` presets) sent per request.
+- **MCP exit**: `plan_tasks` in `mcp.ts` — calls `/api/plan`; returns questions (call again with `answers`), or the plan for review (`apply=false`, the confirmation gate), or applies ops one-by-one via REST (`apply=true`, note: regenerates the plan on that call — the tool is stateless).
+
+**BYOK principle (deliberately revised)**: the web stays pure BYOK — the key arrives in the request body per request, lives only in browser `localStorage`, and there is no implicit server key for browsers. The revision: headless callers (MCP) can't do BYOK, so `/api/plan` falls back to the env var **`TASKFLOW_AI_KEY`** as an **explicit opt-in** (never committed, never read for any other route). Both paths stay provider-agnostic: any OpenAI-compatible `baseUrl` + `model` (defaults `DEEPSEEK_BASE_URL` / `AI_PLANNER_MODEL`).
 
 ## Key conventions
 
-- **AI action protocols** (this app's own convention, unrelated to Claude Code's harness): the model emits fenced blocks after its visible reply. The server strips them from the streamed text, parses them, and sends them in the SSE `done` event; the client renders cards.
-  - ` ```proposals``` ` → task-mutation suggestions, **persisted** in `messages.proposals` → `ProposalCard` ("应用全部").
-  - ` ```questions``` ` → option-based clarifying questions, **transient** (not stored) → `QuestionCard`; the user's picks compose into a follow-up message that then yields proposals.
-  - To add a new protocol, mirror these: a `*_PROTOCOL` prompt constant, a server-side parse + `done`-event field, and a client card.
+- **AI action protocols** (this app's own convention, unrelated to Claude Code's harness): the model ends its reply with a fenced block; visible text outside blocks is discarded.
+  - ` ```proposals``` ` → task-mutation ops (`create`/`update`/`complete`/`delete`), zod-validated in `planLib.ts` → `ProposalCard` (逐条/全部采纳 via REST) or `plan_tasks` review/apply.
+  - ` ```questions``` ` → option-based clarifying questions → `QuestionCard`; the picks become the `answers: string[]` of the next one-shot call. Never persisted.
+  - To add a new protocol, mirror these three places: a `*_PROTOCOL` constant in `protocols.ts`, a schema + parse branch in `planLib.ts` (with tests), and a client card in `PlannerBox.tsx`.
 - **Schema migrations**: `CREATE TABLE IF NOT EXISTS` won't alter existing tables. For new columns, follow the `in_sprint` pattern in `db.ts` — `PRAGMA table_info(tasks)`, then `ALTER TABLE … ADD COLUMN …` if absent.
-- **Memory & AI rules** live in SQLite, not files: `memories` (per-project facts), `agents_docs` (a per-project AGENTS.md), and `settings.agent_rules` (overrides the base system prompt). There is no `agent.md` file.
+- **AI rules** live in SQLite, not files: `settings.agent_rules` overrides the base system prompt (protocols + date anchor are always appended). There is no `agent.md` file.
 - **本周冲刺 (sprint)**: the current week (Mon–Sun) is computed live on the client (`DateU.weekDates`) and never stored. Membership is the per-task boolean `tasks.in_sprint`; a flagged task drops out of the view automatically once its dates leave the week. `SprintView.tsx` + `taskInWeek` in `calendarGeom.ts`.
-- **Pure functions + unit tests** for logic the headless browser preview can't exercise (drag gestures, date math): keep it in pure functions (e.g. `calendarGeom.ts`) and cover it in `tests/*.test.mjs`. The preview throttles `requestAnimationFrame` and can't synthesize pointer drags, so this is the reliable verification channel for that logic.
-- **Legacy/unused**: the `cycles` + `cycle_tasks` tables and `/api/cycles` routes are leftovers from a removed "Cycles" view, superseded by `in_sprint` / `SprintView`. Safe to ignore; can be removed.
+- **Pure functions + unit tests** for logic the headless browser preview can't exercise (drag gestures, date math, plan parsing): keep it in pure functions (e.g. `calendarGeom.ts`, `planLib.ts`, `mcpLib.ts`) and cover it in `tests/*.test.mjs`. The preview throttles `requestAnimationFrame` and can't synthesize pointer drags, so this is the reliable verification channel for that logic.
+- **Legacy/unused**:
+  - `conversations` / `messages` / `memories` / `agents_docs` tables are leftovers of the removed chat panel (collapsed into the one-shot planner). **Kept on purpose** (no destructive migration, old data preserved) but they have **no read/write paths** — their routes (`chat.ts`, `ai.ts`, `memories.ts`, `agentsDoc.ts`) were deleted. Don't build on them.
+  - `cycles` + `cycle_tasks` tables and `/api/cycles` routes are leftovers from a removed "Cycles" view, superseded by `in_sprint` / `SprintView`. Safe to ignore; can be removed.
 
 ## Environment variables
 
-All optional — the app runs with none (BYOK). Copy `.env.example` → `.env` only to override defaults.
+All optional — the app runs with none (web BYOK). Copy `.env.example` → `.env` only to override defaults.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek-compatible gateway URL |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible gateway URL (the in-app provider picker overrides it per request) |
 | `AI_PLANNER_MODEL` | `deepseek-chat` | Default model (the in-app model picker overrides it per request) |
-| `AI_PLANNER_THINKING` | `disabled` | `enabled` surfaces a reasoning heartbeat |
+| `TASKFLOW_AI_KEY` | — | **Headless opt-in** AI key for `/api/plan` when the request carries no `apiKey` (MCP `plan_tasks` etc.). Web stays pure BYOK. Never commit it. |
